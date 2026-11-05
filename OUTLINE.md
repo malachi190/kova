@@ -29,7 +29,7 @@ Build Kova from first commit to deployment by following this outline **in order,
   *Done when:* migrations apply cleanly on an empty database and are forward-only. *Tests:* migration test on a fresh container.
 - [x] **0.5 Logging, correlation IDs, errors.** `pino` JSON logs, correlation ID middleware (read or create `x-correlation-id`), redaction of sensitive fields, global exception filter using the standard error format.
   *Done when:* every log line has a correlation ID and sensitive fields never appear in logs. *Tests:* redaction test, error format test.
-- [ ] **0.6 Money utilities.** `Kobo` type and helpers (add, subtract, multiply by bps with half-up rounding), formatting helper for display.
+- [x] **0.6 Money utilities.** `Kobo` type and helpers (add, subtract, multiply by bps with half-up rounding), formatting helper for display.
   *Done when:* rounding is exact and no floats are used. *Tests:* unit tests including edge cases.
 - [ ] **0.7 Idempotency support.** Interceptor for `Idempotency-Key`: stores key, request hash, and response; same key returns the stored response; same key with a different body is rejected; keys expire after 48 hours.
   *Done when:* repeating a request returns the same result without running the handler twice. *Tests:* repeat, mismatch, and concurrent-request tests.
