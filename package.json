@@ -15,9 +15,9 @@
     "typecheck": "tsc --noEmit",
     "test": "pnpm build && tsc -p tsconfig.test.json && node --test dist/test/*/*.test.js",
     "test:smoke": "pnpm build && tsc -p tsconfig.test.json && node --test dist/test/smoke/*.test.js",
-    "start:api": "node dist/src/main.api.js",
-    "start:worker": "node dist/src/main.worker.js",
-    "start:scheduler": "node dist/src/main.scheduler.js"
+    "start:api": "node --env-file-if-exists=.env dist/src/main.api.js",
+    "start:worker": "node --env-file-if-exists=.env dist/src/main.worker.js",
+    "start:scheduler": "node --env-file-if-exists=.env dist/src/main.scheduler.js"
   },
   "dependencies": {
     "@nestjs/common": "11.2.8",
@@ -27,7 +27,8 @@
     "pg": "8.23.1",
     "redis": "6.3.1",
     "reflect-metadata": "0.2.2",
-    "rxjs": "7.8.2"
+    "rxjs": "7.8.2",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

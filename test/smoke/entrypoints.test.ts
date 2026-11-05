@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import test from 'node:test';
 import { createApiApplication } from '../../src/main.api';
 import { createSchedulerApplication } from '../../src/main.scheduler';
@@ -25,8 +26,17 @@ test('scheduler entry point creates and closes an application context', async ()
 });
 
 test('API entry point terminates after SIGTERM', async () => {
+  const port = await findAvailablePort();
   const child = spawn(process.execPath, ['dist/src/main.api.js'], {
-    env: { ...process.env, PORT: '0' },
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      DATABASE_URL: 'postgresql://test:test@127.0.0.1:5432/kova_test',
+      REDIS_URL: 'redis://127.0.0.1:6379',
+      RABBITMQ_URL: 'amqp://test:test@127.0.0.1:5672/kova_test',
+      PORT: String(port),
+      CORS_ORIGIN: 'http://localhost:3001',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -66,3 +76,18 @@ test('API entry point terminates after SIGTERM', async () => {
     }
   }
 });
+
+async function findAvailablePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve());
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const { port } = address;
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  return port;
+}

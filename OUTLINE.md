@@ -23,7 +23,7 @@ Build Kova from first commit to deployment by following this outline **in order,
   *Done when:* `pnpm install`, `pnpm lint`, `pnpm typecheck`, and starting each entry point all work. *Tests:* a smoke test for each entry point. *(Packaging the entry points into Docker images is **Infra (owner)** — notify the owner when this feature is code-complete.)*
 - [ ] **0.2 Local infrastructure.** **Infra (owner).** The owner writes the Docker Compose stack (Postgres, Redis, RabbitMQ with management UI local only, Mailpit) and the Dockerfiles for the three app processes. Codex owns only the application side: a `/health` (or equivalent) endpoint that reports each dependency, and graceful shutdown/SIGTERM handling so processes stop cleanly. When 0.1 is code-complete, notify the owner that the Compose stack and Dockerfiles are needed here.
   *Done when:* `docker compose up` (run by the owner) starts everything and the API health endpoint reports each dependency. *Tests:* health endpoint test (Codex); stack behaviour tests are the owner's.
-- [ ] **0.3 Configuration.** Environment variables validated with zod at startup. App refuses to boot if something is missing. `.env.example` committed (no secrets).
+- [x] **0.3 Configuration.** Environment variables validated with zod at startup. App refuses to boot if something is missing. `.env.example` committed (no secrets).
   *Done when:* missing or invalid config stops startup with a clear message. *Tests:* config validation tests.
 - [ ] **0.4 Database setup.** Drizzle, migration tooling, `pnpm db:migrate`, test database helpers. First migrations: `idempotency_keys`, `audit_log`.
   *Done when:* migrations apply cleanly on an empty database and are forward-only. *Tests:* migration test on a fresh container.

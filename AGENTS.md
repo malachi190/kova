@@ -319,6 +319,8 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 
 Phase 0 creates these. Keep this section accurate.
 
+**Configuration:** copy `.env.example` to `.env` for local development, then replace its placeholders. The start scripts load `.env` when present; environment variables provided by the process take precedence. `NODE_ENV`, `DATABASE_URL`, `REDIS_URL`, and `RABBITMQ_URL` are required by all processes. The API also requires `PORT` and `CORS_ORIGIN`. `.env` is ignored by Git; only `.env.example` is committed.
+
 ```
 pnpm install --frozen-lockfile # install pinned dependencies
 pnpm build                     # compile the application to dist/
