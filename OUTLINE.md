@@ -27,7 +27,7 @@ Build Kova from first commit to deployment by following this outline **in order,
   *Done when:* missing or invalid config stops startup with a clear message. *Tests:* config validation tests.
 - [x] **0.4 Database setup.** Drizzle, migration tooling, `pnpm db:migrate`, test database helpers. First migrations: `idempotency_keys`, `audit_log`.
   *Done when:* migrations apply cleanly on an empty database and are forward-only. *Tests:* migration test on a fresh container.
-- [ ] **0.5 Logging, correlation IDs, errors.** `pino` JSON logs, correlation ID middleware (read or create `x-correlation-id`), redaction of sensitive fields, global exception filter using the standard error format.
+- [x] **0.5 Logging, correlation IDs, errors.** `pino` JSON logs, correlation ID middleware (read or create `x-correlation-id`), redaction of sensitive fields, global exception filter using the standard error format.
   *Done when:* every log line has a correlation ID and sensitive fields never appear in logs. *Tests:* redaction test, error format test.
 - [ ] **0.6 Money utilities.** `Kobo` type and helpers (add, subtract, multiply by bps with half-up rounding), formatting helper for display.
   *Done when:* rounding is exact and no floats are used. *Tests:* unit tests including edge cases.

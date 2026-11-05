@@ -2,9 +2,17 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { loadApiConfig } from './common/config/env-config';
+import { ApiExceptionFilter } from './common/errors/api-exception.filter';
+import { correlationIdMiddleware } from './common/correlation/correlation-id.middleware';
+import { PinoNestLogger } from './common/logger/logger';
 
 export async function createApiApplication() {
-  return NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: new PinoNestLogger(),
+  });
+  app.use(correlationIdMiddleware);
+  app.useGlobalFilters(new ApiExceptionFilter());
+  return app;
 }
 
 export async function bootstrapApi(): Promise<void> {
