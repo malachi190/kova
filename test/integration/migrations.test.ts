@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { resolve } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import test from 'node:test';
-import { drizzle } from 'drizzle-orm/node-postgres';
-import { migrate } from 'drizzle-orm/node-postgres/migrator';
 import { Pool } from 'pg';
 import { createTestDatabase } from '../helpers/test-database';
 
+const execFileAsync = promisify(execFile);
 const testAdminUrl = process.env.TEST_DATABASE_ADMIN_URL;
 
 test(
@@ -19,10 +19,8 @@ test(
     const pool = new Pool({ connectionString: testDatabase.connectionString });
 
     try {
-      const database = drizzle({ client: pool });
-      const migrationsFolder = resolve(process.cwd(), 'src/db/migrations');
-      await migrate(database, { migrationsFolder });
-      await migrate(database, { migrationsFolder });
+      await runMigrationCommand(testDatabase.connectionString);
+      await runMigrationCommand(testDatabase.connectionString);
 
       const tables = await pool.query<{
         idempotency: string | null;
@@ -59,3 +57,17 @@ test(
     }
   },
 );
+
+async function runMigrationCommand(databaseUrl: string): Promise<void> {
+  try {
+    await execFileAsync('pnpm', ['db:migrate'], {
+      cwd: process.cwd(),
+      env: { ...process.env, DATABASE_URL: databaseUrl },
+      timeout: 30_000,
+    });
+  } catch {
+    throw new Error(
+      'pnpm db:migrate failed against the isolated test database',
+    );
+  }
+}

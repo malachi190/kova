@@ -25,7 +25,7 @@ Build Kova from first commit to deployment by following this outline **in order,
   *Done when:* `docker compose up` (run by the owner) starts everything and the API health endpoint reports each dependency. *Tests:* health endpoint test (Codex); stack behaviour tests are the owner's.
 - [x] **0.3 Configuration.** Environment variables validated with zod at startup. App refuses to boot if something is missing. `.env.example` committed (no secrets).
   *Done when:* missing or invalid config stops startup with a clear message. *Tests:* config validation tests.
-- [ ] **0.4 Database setup.** Drizzle, migration tooling, `pnpm db:migrate`, test database helpers. First migrations: `idempotency_keys`, `audit_log`.
+- [x] **0.4 Database setup.** Drizzle, migration tooling, `pnpm db:migrate`, test database helpers. First migrations: `idempotency_keys`, `audit_log`.
   *Done when:* migrations apply cleanly on an empty database and are forward-only. *Tests:* migration test on a fresh container.
 - [ ] **0.5 Logging, correlation IDs, errors.** `pino` JSON logs, correlation ID middleware (read or create `x-correlation-id`), redaction of sensitive fields, global exception filter using the standard error format.
   *Done when:* every log line has a correlation ID and sensitive fields never appear in logs. *Tests:* redaction test, error format test.
