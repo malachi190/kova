@@ -7,7 +7,8 @@ export async function createWorkerApplication() {
 }
 
 export async function bootstrapWorker(): Promise<void> {
-  await createWorkerApplication();
+  const app = await createWorkerApplication();
+  app.enableShutdownHooks(['SIGTERM', 'SIGINT']);
 }
 
 if (require.main === module) {

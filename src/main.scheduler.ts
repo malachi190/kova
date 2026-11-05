@@ -7,7 +7,8 @@ export async function createSchedulerApplication() {
 }
 
 export async function bootstrapScheduler(): Promise<void> {
-  await createSchedulerApplication();
+  const app = await createSchedulerApplication();
+  app.enableShutdownHooks(['SIGTERM', 'SIGINT']);
 }
 
 if (require.main === module) {

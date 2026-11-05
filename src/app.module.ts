@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { HealthModule } from './modules/health/health.module';
 
-@Module({})
+@Module({ imports: [HealthModule] })
 export class AppModule {}
