@@ -31,7 +31,7 @@ Build Kova from first commit to deployment by following this outline **in order,
   *Done when:* every log line has a correlation ID and sensitive fields never appear in logs. *Tests:* redaction test, error format test.
 - [x] **0.6 Money utilities.** `Kobo` type and helpers (add, subtract, multiply by bps with half-up rounding), formatting helper for display.
   *Done when:* rounding is exact and no floats are used. *Tests:* unit tests including edge cases.
-- [ ] **0.7 Idempotency support.** Interceptor for `Idempotency-Key`: stores key, request hash, and response; same key returns the stored response; same key with a different body is rejected; keys expire after 48 hours.
+- [x] **0.7 Idempotency support.** Interceptor for `Idempotency-Key`: stores key, request hash, and response; same key returns the stored response; same key with a different body is rejected; keys expire after 48 hours.
   *Done when:* repeating a request returns the same result without running the handler twice. *Tests:* repeat, mismatch, and concurrent-request tests.
 - [ ] **0.8 Rate limiting and security basics.** Redis-backed throttling, Helmet, locked-down CORS, request size limits, DTO validation with whitelisting.
   *Done when:* unknown fields are rejected and limits are configurable per route. *Tests:* throttle and validation tests.
