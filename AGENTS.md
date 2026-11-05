@@ -301,6 +301,7 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 - Graceful shutdown: workers finish the current message and acknowledge only after the database commit.
 - Commits are small and use clear messages (`feat:`, `fix:`, `test:`, `chore:`).
 - Comments explain *why*, not *what*.
+- Dependency build-script permissions and targeted security overrides live in `pnpm-workspace.yaml`. Only `esbuild` is allowed to run an install script because Drizzle Kit uses it to load TypeScript config; audit-driven overrides must stay scoped to the affected dependency path.
 
 ## 11. Testing rules
 
@@ -319,7 +320,7 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 
 Phase 0 creates these. Keep this section accurate.
 
-**Configuration:** copy `.env.example` to `.env` for local development, then replace its placeholders. The start scripts load `.env` when present; environment variables provided by the process take precedence. `NODE_ENV`, `DATABASE_URL`, `REDIS_URL`, and `RABBITMQ_URL` are required by all processes. The API also requires `PORT` and `CORS_ORIGIN`. `.env` is ignored by Git; only `.env.example` is committed.
+**Configuration:** copy `.env.example` to `.env` for local development, then replace its placeholders. The start, migration, and test scripts load `.env` when present; environment variables provided by the process take precedence. `NODE_ENV`, `DATABASE_URL`, `REDIS_URL`, and `RABBITMQ_URL` are required by all app processes. The API also requires `PORT` and `CORS_ORIGIN`. `.env` is ignored by Git; only `.env.example` is committed. Database integration tests use the optional `TEST_DATABASE_ADMIN_URL`, which must point to the local PostgreSQL maintenance database at `/postgres`; the helper creates and drops only a generated `kova_test_<uuid>` database.
 
 ```
 pnpm install --frozen-lockfile # install pinned dependencies
@@ -330,6 +331,9 @@ pnpm format:check              # verify formatting
 pnpm typecheck                 # type check application and tests
 pnpm test                      # run unit and smoke tests
 pnpm test:smoke                # smoke test all three entry points
+pnpm test:integration          # run integration tests against local throwaway test databases
+pnpm db:generate               # generate a forward-only SQL migration from Drizzle schemas
+pnpm db:migrate                # apply pending migrations
 pnpm audit                     # audit pinned dependencies
 pnpm start:api                 # run the compiled API
 pnpm start:worker              # run the compiled worker
