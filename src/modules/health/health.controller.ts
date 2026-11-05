@@ -1,4 +1,5 @@
 import { Controller, Get, Res } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { HealthService } from './health.service';
 
 interface StatusResponse {
@@ -6,6 +7,8 @@ interface StatusResponse {
 }
 
 @Controller('health')
+// Health probes must still report Redis outages when the throttle store is down.
+@SkipThrottle()
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 

@@ -1,0 +1,3 @@
+export const DEFAULT_THROTTLE_LIMIT = 60;
+export const DEFAULT_THROTTLE_TTL_MS = 60_000;
+export const REQUEST_BODY_LIMIT_BYTES = 100 * 1024;

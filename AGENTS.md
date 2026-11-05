@@ -280,8 +280,9 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 ## 9. Security rules (in addition to the hard rules)
 
 - Rate limit login, one-time code sending and verification, payment initialization (per IP and per email), and dispute requests. Add a CAPTCHA after repeated payment attempts.
+- API-wide rate-limit default is 60 requests per IP per 60 seconds in Redis; use `@Throttle` to set stricter route limits. Health checks skip throttling so they can report when Redis is down.
 - One-time codes expire in 5 to 10 minutes, have limited attempts, and a cooldown between sends. Store them hashed.
-- Validate all input and reject unknown fields. Use parameterized queries. Lock down CORS. Use security headers (Helmet). Limit request size.
+- Validate all input and reject unknown fields. Use parameterized queries. Lock down CORS. Use security headers (Helmet). JSON and URL-encoded request bodies are limited to 100 KiB.
 - Uploads: check type and size, store in object storage, never serve user files from the app origin. Build receipt PDFs from a fixed template, never from user-written HTML.
 - Admin: mandatory 2FA, role-based permissions, full audit log.
 - Fraud signals to implement: deal caps for new vendors, dispute-rate monitoring, repeated losing disputes, many different emails from one IP, repeated failed payments, unusual deal patterns (flag for admin review).

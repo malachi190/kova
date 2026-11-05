@@ -26,6 +26,9 @@ const corsOrigin = z
   .url()
   .refine((value) => usesProtocol(value, ['http:', 'https:']), {
     message: 'must use the http:// or https:// scheme',
+  })
+  .refine(isOriginOnly, {
+    message: 'must contain only an origin, with no path, query, or fragment',
   });
 
 const runtimeSchema = z.object({
@@ -76,6 +79,15 @@ function usesProtocol(
 ): boolean {
   try {
     return allowedProtocols.includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
+function isOriginOnly(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.pathname === '/' && !url.search && !url.hash;
   } catch {
     return false;
   }

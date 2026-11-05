@@ -58,6 +58,18 @@ test('invalid schemes, ports, and CORS protocols are rejected', () => {
   );
 });
 
+test('CORS configuration accepts only an origin without a path', () => {
+  assert.throws(
+    () =>
+      loadApiConfig({
+        ...sharedConfig,
+        PORT: '4310',
+        CORS_ORIGIN: 'https://dashboard.example.test/path',
+      }),
+    /CORS_ORIGIN/,
+  );
+});
+
 test('all process bootstraps refuse to start with missing runtime configuration', async () => {
   const keys = [
     'NODE_ENV',

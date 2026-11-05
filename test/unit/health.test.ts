@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createApiApplication } from '../../src/main.api';
+import { createTestApiConfig } from '../helpers/api-config';
 
 test('GET /health reports dependency states and uses 503 when a dependency is down', async () => {
   const previous = {
@@ -8,11 +9,12 @@ test('GET /health reports dependency states and uses 503 when a dependency is do
     redisUrl: process.env.REDIS_URL,
     rabbitMqUrl: process.env.RABBITMQ_URL,
   };
+  const apiConfig = createTestApiConfig();
   delete process.env.DATABASE_URL;
   delete process.env.REDIS_URL;
   delete process.env.RABBITMQ_URL;
 
-  const app = await createApiApplication();
+  const app = await createApiApplication(apiConfig);
   try {
     await app.listen(0, '127.0.0.1');
     const address = app.getHttpServer().address();

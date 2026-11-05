@@ -5,9 +5,10 @@ import test from 'node:test';
 import { createApiApplication } from '../../src/main.api';
 import { createSchedulerApplication } from '../../src/main.scheduler';
 import { createWorkerApplication } from '../../src/main.worker';
+import { createTestApiConfig } from '../helpers/api-config';
 
 test('API entry point creates and closes an application', async () => {
-  const app = await createApiApplication();
+  const app = await createApiApplication(createTestApiConfig());
   await app.init();
   await app.close();
   assert.ok(app);
