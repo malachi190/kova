@@ -108,6 +108,7 @@ services:
     <<: *app
     command: ['--env-file-if-exists=.env', 'dist/src/main.worker.js']
     ports: []
+    restart: 'no'
     healthcheck:
       disable: true
 
@@ -115,6 +116,7 @@ services:
     <<: *app
     command: ['--env-file-if-exists=.env', 'dist/src/main.scheduler.js']
     ports: []
+    restart: 'no'
     healthcheck:
       disable: true
 
