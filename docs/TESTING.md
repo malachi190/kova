@@ -15,7 +15,7 @@ The stack keeps database and broker data in named volumes. `docker compose down`
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pushes to `main` and pull requests. It starts a short-lived PostgreSQL server with a generated password for the migration test, then runs lint, typecheck, unit and migration tests, Testcontainers integration and e2e suites, `pnpm audit --audit-level=moderate`, and a Docker image build. The audit gate fails on moderate, high, and critical advisories; low advisories remain visible in the audit output. The full workflow passed on `main` at commit `48ff96f` on 2026-11-08.
+`.github/workflows/ci.yml` runs on pushes to `main` and pull requests. It starts a short-lived PostgreSQL server with a generated password for the migration test, then runs lint, typecheck, unit and migration tests, Testcontainers integration and e2e suites, `pnpm audit --audit-level=moderate`, and a Docker image build. The audit gate fails on moderate, high, and critical advisories; low advisories remain visible in the audit output. The full workflow passed on `main` at commit `6a2636c` on 2026-11-08.
 
 Docker must be running and reachable by the current user for integration and e2e tests. Testcontainers selects mapped local ports, generates the Postgres password for each run, and stops the containers after Jest exits. The application tests receive `DATABASE_URL`, `REDIS_URL`, `RABBITMQ_URL`, and `NODE_ENV=test` from the runner; no `.env` test secrets are required. The pre-existing Node integration tests continue to use their existing local test database setup.
 
