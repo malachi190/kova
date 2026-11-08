@@ -65,6 +65,7 @@ The owner is following a separate **infra engineering roadmap** (Linux and netwo
 **Two goals.** A real product with a real pain point, and a portfolio project that demonstrates core payment-system engineering: idempotency, outbox and inbox patterns, async pipelines, webhooks, a double-entry ledger, state machines, reconciliation, retries, and unknown-outcome handling.
 
 **Core flow**
+
 1. Vendor creates a deal (item, price, delivery window) and gets a link.
 2. Vendor pastes the link into the DM.
 3. Buyer opens the link, sees price, service fee, and total, and pays through Paystack.
@@ -84,26 +85,27 @@ The owner is following a separate **infra engineering roadmap** (Linux and netwo
 
 ## 3. Tech stack and architecture
 
-| Area | Decision |
-|---|---|
-| Language and framework | TypeScript (strict mode) with NestJS |
-| Package manager | pnpm |
-| Architecture | Modular monolith. One repository, one package, three entry points |
-| Database | PostgreSQL, the source of truth |
-| ORM | Drizzle ORM with SQL migrations (explicit transactions, `FOR UPDATE SKIP LOCKED`) |
-| Broker | RabbitMQ through `amqplib` behind a small wrapper |
-| Redis | Rate limiting, short locks, caching. Never the source of truth for money or state |
-| Scheduling | Due times stored in Postgres and polled by the scheduler process |
-| Validation | `class-validator` DTOs with whitelisting; `zod` for environment config |
-| Auth | `@nestjs/jwt`, `argon2` |
-| Rate limiting | `@nestjs/throttler` backed by Redis |
-| Logging | `pino`, JSON, with correlation IDs |
-| PDF | `pdfkit` (template in code, no browser) |
-| Tests | Jest, Supertest, Testcontainers, fast-check, k6 |
-| Client | Next.js with Typescript & Tailwind CSS (dashboard) |
-| Payment provider | Paystack, behind the `PaymentProvider` interface |
+| Area                   | Decision                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| Language and framework | TypeScript (strict mode) with NestJS                                              |
+| Package manager        | pnpm                                                                              |
+| Architecture           | Modular monolith. One repository, one package, three entry points                 |
+| Database               | PostgreSQL, the source of truth                                                   |
+| ORM                    | Drizzle ORM with SQL migrations (explicit transactions, `FOR UPDATE SKIP LOCKED`) |
+| Broker                 | RabbitMQ through `amqplib` behind a small wrapper                                 |
+| Redis                  | Rate limiting, short locks, caching. Never the source of truth for money or state |
+| Scheduling             | Due times stored in Postgres and polled by the scheduler process                  |
+| Validation             | `class-validator` DTOs with whitelisting; `zod` for environment config            |
+| Auth                   | `@nestjs/jwt`, `argon2`                                                           |
+| Rate limiting          | `@nestjs/throttler` backed by Redis                                               |
+| Logging                | `pino`, JSON, with correlation IDs                                                |
+| PDF                    | `pdfkit` (template in code, no browser)                                           |
+| Tests                  | Jest, Supertest, Testcontainers, fast-check, k6                                   |
+| Client                 | Next.js with Typescript & Tailwind CSS (dashboard)                                |
+| Payment provider       | Paystack, behind the `PaymentProvider` interface                                  |
 
 **Entry points** (one Docker image, different start commands; building and running the image is the owner's infra work, see section 0a)
+
 - `main.api.ts`: HTTP API
 - `main.worker.ts`: RabbitMQ consumers (payments, payouts, refunds, notifications, receipts)
 - `main.scheduler.ts`: outbox relay and scheduled-jobs poller
@@ -111,12 +113,14 @@ The owner is following a separate **infra engineering roadmap** (Linux and netwo
 **Modules:** `auth`, `vendors`, `payout-accounts`, `deals`, `fees`, `payments`, `payouts`, `refunds`, `disputes`, `ledger`, `webhooks`, `messaging`, `scheduler`, `notifications`, `receipts`, `admin`, `audit`, `providers/paystack`, `providers/kyc`, `common`.
 
 **Module rules**
+
 - A module reads and writes only its own tables. Other modules go through its exported service or through events.
 - Controllers are thin. Business logic lives in services.
 - Only `ledger` writes ledger tables. Only `DealStateService` changes deal status.
 - `fees` is a pure function module with no database access.
 
 **Suggested layout**
+
 ```
 src/
   main.api.ts  main.worker.ts  main.scheduler.ts
@@ -131,6 +135,7 @@ web/   (Next.js client; confirm layout at Phase 7)
 ## 4. Business rules (source of truth)
 
 ### 4.1 Vendors
+
 - Register with email or phone number, password, full name, and store name. Verify email or phone with a one-time code.
 - Passwords hashed with argon2. Short-lived access tokens (JWT) plus refresh tokens with rotation. Revoke refresh tokens on password change.
 - **Verification before the first deal:** the vendor submits a BVN. A BVN verification provider (behind the `KycVerifier` interface) returns the identity name. The vendor's bank account number is resolved through Paystack. The account name must match the BVN name. Both checks are required.
@@ -138,12 +143,14 @@ web/   (Next.js client; confirm layout at Phase 7)
 - Vendor statuses: `PENDING_VERIFICATION`, `ACTIVE`, `FROZEN`.
 
 ### 4.2 Buyers and admins
+
 - Buyers have no account. They open the deal link and pay. Email is collected for Paystack and stored.
 - **Buyer identity is the normalized email.** The dashboards show a generated display name from a hash of it (for example "Buyer #A7F3").
 - After payment, the buyer gets a PDF receipt by email that contains the transaction ID.
 - Admins have a separate login with mandatory 2FA (TOTP) and role-based permissions. Every admin action is written to the audit log.
 
 ### 4.3 Deals and timers
+
 - Deal fields: item title, description, price (kobo), delivery window end, status, link token (stored hashed).
 - Payment link expires 24 hours after creation.
 - The vendor must ship within the delivery window.
@@ -151,9 +158,11 @@ web/   (Next.js client; confirm layout at Phase 7)
 - Every timer job re-checks the deal's current state before acting. A disputed deal is never auto-released.
 
 ### 4.4 Fees
+
 The **buyer pays the service fee on top of the item price.** The vendor receives the full price. Kova absorbs Paystack's processing and payout costs from its fee.
 
 **Formula** (all values in config, nothing hard-coded):
+
 - 5% (500 bps) on the first ₦10,000 (1,000,000 kobo) of the price, plus 3.5% (350 bps) on the part above it.
 - Minimum fee ₦200 (20,000 kobo).
 - Integer math with half-up rounding: `(amount * bps + 5000) / 10000`, dropping the remainder. Round each part, then add them, then apply the minimum.
@@ -161,18 +170,19 @@ The **buyer pays the service fee on top of the item price.** The vendor receives
 
 **Test table (must pass exactly)**
 
-| Price | Fee | Buyer pays |
-|---|---|---|
-| ₦2,000 | ₦200 (minimum) | ₦2,200 |
-| ₦5,000 | ₦250 | ₦5,250 |
-| ₦10,000 | ₦500 | ₦10,500 |
-| ₦20,000 | ₦850 | ₦20,850 |
-| ₦100,000 | ₦3,650 | ₦103,650 |
-| ₦500,000 | ₦17,650 | ₦517,650 |
+| Price    | Fee            | Buyer pays |
+| -------- | -------------- | ---------- |
+| ₦2,000   | ₦200 (minimum) | ₦2,200     |
+| ₦5,000   | ₦250           | ₦5,250     |
+| ₦10,000  | ₦500           | ₦10,500    |
+| ₦20,000  | ₦850           | ₦20,850    |
+| ₦100,000 | ₦3,650         | ₦103,650   |
+| ₦500,000 | ₦17,650        | ₦517,650   |
 
 **Paystack's real fee** comes back with the transaction data. Record it in the ledger (`provider_fees`). Never estimate it. Payouts of ₦10,000 or more also carry a ₦50 government stamp duty; record that in `provider_fees` too. Profit per deal is `revenue - provider_fees`. Re-check Paystack pricing before launch.
 
 ### 4.5 Refunds and disputes
+
 - A refund returns the **item price only**. The service fee is never refunded. The terms and the checkout page must say so clearly.
 - Every refund stores a `refund_reason`.
 - Refund triggers: vendor cancels after payment, vendor misses the ship deadline, admin rules for the buyer in a dispute, a late payment (after expiry or cancellation), or a duplicate payment.
@@ -182,11 +192,13 @@ The **buyer pays the service fee on top of the item price.** The vendor receives
 - Flag buyers (by email) who repeatedly lose disputes and vendors with high dispute rates.
 
 ### 4.6 Limits and holds (values to confirm, see section 14)
+
 - New vendors have a deal cap (suggested ₦50,000) until they have **5 deals that reached COMPLETED**.
 - Daily payout limits for new vendors.
 - Changing a payout bank account needs a one-time code, sends an email or SMS alert, and puts a payout hold of 24 to 48 hours on that vendor.
 
 ### 4.7 Payment methods
+
 - **Bank transfer (Paystack Pay with Transfer) is the main method** and is shown first.
 - **Cards stay available as a secondary option.** International cards can cost more than the service fee on small deals; this is a known risk (section 14).
 - OPay: only if Paystack supports it (section 14). OPay users can always pay by transfer.
@@ -200,19 +212,20 @@ A double-entry, append-only ledger in Postgres. Ledger accounts are records of w
 
 **Entries** (example: ₦5,000 deal, ₦250 fee, Paystack fee ₦179)
 
-| Event | Debit | Credit |
-|---|---|---|
-| Buyer pays ₦5,250 | `paystack_cash` 5,071; `provider_fees` 179 | vendor `held` 5,000; `revenue` 250 |
-| Release to vendor | vendor `held` 5,000 | vendor `available` 5,000 |
-| Payout starts | vendor `available` 5,000 | `payout_in_transit` 5,000 |
-| Payout succeeds | `payout_in_transit` 5,000 | `paystack_cash` 5,000 |
-| Payout fee (and stamp duty if applicable) | `provider_fees` | `paystack_cash` |
-| Payout fails or is reversed | `payout_in_transit` 5,000 | vendor `available` 5,000 |
-| Refund requested (price only) | vendor `held` 5,000 | `refund_in_transit` 5,000 |
-| Refund processed | `refund_in_transit` 5,000 | `paystack_cash` 5,000 |
-| Refund fails | `refund_in_transit` 5,000 | vendor `held` 5,000 |
+| Event                                     | Debit                                      | Credit                             |
+| ----------------------------------------- | ------------------------------------------ | ---------------------------------- |
+| Buyer pays ₦5,250                         | `paystack_cash` 5,071; `provider_fees` 179 | vendor `held` 5,000; `revenue` 250 |
+| Release to vendor                         | vendor `held` 5,000                        | vendor `available` 5,000           |
+| Payout starts                             | vendor `available` 5,000                   | `payout_in_transit` 5,000          |
+| Payout succeeds                           | `payout_in_transit` 5,000                  | `paystack_cash` 5,000              |
+| Payout fee (and stamp duty if applicable) | `provider_fees`                            | `paystack_cash`                    |
+| Payout fails or is reversed               | `payout_in_transit` 5,000                  | vendor `available` 5,000           |
+| Refund requested (price only)             | vendor `held` 5,000                        | `refund_in_transit` 5,000          |
+| Refund processed                          | `refund_in_transit` 5,000                  | `paystack_cash` 5,000              |
+| Refund fails                              | `refund_in_transit` 5,000                  | vendor `held` 5,000                |
 
 **Invariants**
+
 - Debits equal credits in every transaction, enforced in code and by a database constraint.
 - Each ledger transaction has a unique `reference` (for example `payment:{paystack_ref}`, `release:{deal_id}`), so repeats cannot post twice.
 - Entries and the cached balance update in one DB transaction, with a row lock on the account. Vendor accounts can never go below zero.
@@ -225,18 +238,18 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 
 **Deal**
 
-| From | To | Trigger |
-|---|---|---|
-| CREATED | PAID | Verified payment |
-| CREATED | CANCELLED | Vendor cancels |
-| CREATED | EXPIRED | Link timer |
-| PAID | SHIPPED | Vendor marks shipped |
-| PAID | REFUNDED | Vendor cancels, or misses ship deadline |
-| PAID | DISPUTED | Buyer opens dispute |
-| SHIPPED | COMPLETED | Buyer confirms, or auto-release |
-| SHIPPED | DISPUTED | Buyer opens dispute |
-| DISPUTED | COMPLETED | Admin rules for vendor |
-| DISPUTED | REFUNDED | Admin rules for buyer |
+| From     | To        | Trigger                                 |
+| -------- | --------- | --------------------------------------- |
+| CREATED  | PAID      | Verified payment                        |
+| CREATED  | CANCELLED | Vendor cancels                          |
+| CREATED  | EXPIRED   | Link timer                              |
+| PAID     | SHIPPED   | Vendor marks shipped                    |
+| PAID     | REFUNDED  | Vendor cancels, or misses ship deadline |
+| PAID     | DISPUTED  | Buyer opens dispute                     |
+| SHIPPED  | COMPLETED | Buyer confirms, or auto-release         |
+| SHIPPED  | DISPUTED  | Buyer opens dispute                     |
+| DISPUTED | COMPLETED | Admin rules for vendor                  |
+| DISPUTED | REFUNDED  | Admin rules for buyer                   |
 
 `COMPLETED`, `REFUNDED`, `CANCELLED`, and `EXPIRED` are final.
 
@@ -255,6 +268,7 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 **Webhook events:** `charge.success`; `transfer.success`, `transfer.failed`, `transfer.reversed`; `refund.pending`, `refund.processing`, `refund.processed`, `refund.failed`.
 
 **Webhook endpoint**
+
 1. Read the raw body (enable raw body parsing for this route).
 2. Verify the `x-paystack-signature` header: HMAC SHA512 of the raw body with the secret key, compared in constant time. Reject with 401 if invalid.
 3. Save the raw event in `webhook_events` (unique on Paystack's event ID).
@@ -262,6 +276,7 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 5. The worker re-verifies with the Paystack API before moving any money. Paystack retries non-200 responses for up to 72 hours and may deliver an event more than once.
 
 **Other rules**
+
 - Short HTTP timeouts. Timeouts lead to `UNKNOWN`, then a check by reference.
 - A reversed transfer returns the money to the vendor's `available` balance and notifies the vendor.
 - Use test keys outside production. Test and live webhook URLs are configured separately; use a tunnel for local development.
@@ -301,7 +316,7 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 - Configuration is validated at startup; the app refuses to boot if something is missing.
 - Graceful shutdown: workers finish the current message and acknowledge only after the database commit.
 - Commits are small and use clear messages (`feat:`, `fix:`, `test:`, `chore:`).
-- Comments explain *why*, not *what*.
+- Comments explain _why_, not _what_.
 - Dependency build-script permissions and targeted security overrides live in `pnpm-workspace.yaml`. Only `esbuild` is allowed to run an install script because Drizzle Kit uses it to load TypeScript config; audit-driven overrides must stay scoped to the affected dependency path.
 
 ## 11. Testing rules
@@ -330,17 +345,21 @@ pnpm lint                      # lint application and tests
 pnpm format                    # format files with Prettier
 pnpm format:check              # verify formatting
 pnpm typecheck                 # type check application and tests
-pnpm test                      # run unit and smoke tests
+pnpm test                      # run unit tests and migration integration test when TEST_DATABASE_ADMIN_URL is set
 pnpm test:smoke                # smoke test all three entry points
-pnpm test:integration          # run integration tests against local throwaway test databases
+pnpm test:integration          # run integration tests; Docker is required for Testcontainers
+pnpm test:e2e                  # run HTTP end-to-end tests with Testcontainers
 pnpm db:generate               # generate a forward-only SQL migration from Drizzle schemas
 pnpm db:migrate                # apply pending migrations
-pnpm audit                     # audit pinned dependencies
+pnpm audit --audit-level=moderate # fail on moderate, high, or critical advisories
 pnpm start:api                 # run the compiled API
 pnpm start:worker              # run the compiled worker
 pnpm start:scheduler           # run the compiled scheduler
-docker compose up              # local infrastructure and services (owner-managed, see section 0a)
+docker compose up --build      # local PostgreSQL, Redis, RabbitMQ, Mailpit, and app processes
+docker compose down            # stop local services and app processes; keep named data volumes
 ```
+
+For Compose, set `COMPOSE_POSTGRES_PASSWORD` and `COMPOSE_RABBITMQ_PASSWORD` in the ignored `.env` file to distinct random hexadecimal passwords (for example, use `openssl rand -hex 24`). Compose publishes service ports on loopback only. The database migration runs automatically before the API, worker, and scheduler start.
 
 ## 13. Definition of done (every feature)
 
@@ -349,18 +368,19 @@ docker compose up              # local infrastructure and services (owner-manage
 - Lint, type check, and CI pass.
 - No hard rule is broken. No secrets, no sensitive data in logs.
 - Docs updated (this file, OpenAPI, README) where relevant.
+- `docs/ARCHITECTURE.md` is updated for this feature: new or changed flows, diagrams, events, jobs, tables, config, and any new concept explained in plain language.
 - The checkbox in `OUTLINE.md` is ticked and the owner has a short summary.
 
 ## 14. Open decisions (ask the owner before building the dependent feature)
 
-| Decision | Needed by | Until then |
-|---|---|---|
-| BVN provider: trial EaseID, Dojah, and Prembly, then pick one | Phase 1 (real verification) | Build against `KycVerifier` with a fake implementation |
-| Card payments: accept the cost risk on small deals, or restrict cards on small deals | Phase 3 | Bank transfer first, cards allowed as secondary |
-| OPay: does Paystack checkout have a dedicated OPay option | Phase 3 | OPay users pay by transfer |
-| VAT: does it apply on top of Paystack fees | Phase 2 (fee reporting) | Treat Paystack's fee as returned by the API |
-| New-vendor deal cap amount, daily payout limits, payout hold duration, minimum and maximum delivery window | Phase 2 and 4 | Use config values with the suggested defaults |
-| Email provider, SMS provider, object storage, CAPTCHA provider | Phase 1, 5, 6 | Use interfaces with local fakes (Mailpit, local storage) |
-| Client repository layout (`web/` folder or separate repo) | Phase 7 | Not started |
-| Hosting target and domain | Phase 9 | Not started |
-| Licensing and regulatory review | Before production | No live keys, no production deploy |
+| Decision                                                                                                   | Needed by                   | Until then                                               |
+| ---------------------------------------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------------- |
+| BVN provider: trial EaseID, Dojah, and Prembly, then pick one                                              | Phase 1 (real verification) | Build against `KycVerifier` with a fake implementation   |
+| Card payments: accept the cost risk on small deals, or restrict cards on small deals                       | Phase 3                     | Bank transfer first, cards allowed as secondary          |
+| OPay: does Paystack checkout have a dedicated OPay option                                                  | Phase 3                     | OPay users pay by transfer                               |
+| VAT: does it apply on top of Paystack fees                                                                 | Phase 2 (fee reporting)     | Treat Paystack's fee as returned by the API              |
+| New-vendor deal cap amount, daily payout limits, payout hold duration, minimum and maximum delivery window | Phase 2 and 4               | Use config values with the suggested defaults            |
+| Email provider, SMS provider, object storage, CAPTCHA provider                                             | Phase 1, 5, 6               | Use interfaces with local fakes (Mailpit, local storage) |
+| Client repository layout (`web/` folder or separate repo)                                                  | Phase 7                     | Not started                                              |
+| Hosting target and domain                                                                                  | Phase 9                     | Not started                                              |
+| Licensing and regulatory review                                                                            | Before production           | No live keys, no production deploy                       |

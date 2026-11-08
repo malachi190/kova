@@ -1,0 +1,124 @@
+name: kova
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: ${COMPOSE_POSTGRES_DB:-kova_dev}
+      POSTGRES_USER: ${COMPOSE_POSTGRES_USER:-kova_app}
+      POSTGRES_PASSWORD: ${COMPOSE_POSTGRES_PASSWORD:?Set COMPOSE_POSTGRES_PASSWORD in .env}
+    ports:
+      - '127.0.0.1:${COMPOSE_POSTGRES_PORT:-55432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:8.2.1-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '127.0.0.1:${COMPOSE_REDIS_PORT:-6380}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  rabbitmq:
+    image: rabbitmq:4.1.3-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${COMPOSE_RABBITMQ_USER:-kova_app}
+      RABBITMQ_DEFAULT_PASS: ${COMPOSE_RABBITMQ_PASSWORD:?Set COMPOSE_RABBITMQ_PASSWORD in .env}
+    ports:
+      - '127.0.0.1:${COMPOSE_RABBITMQ_PORT:-5673}:5672'
+      - '127.0.0.1:${COMPOSE_RABBITMQ_MANAGEMENT_PORT:-15673}:15672'
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ['CMD', 'rabbitmq-diagnostics', '-q', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  mailpit:
+    image: axllent/mailpit:v1.33.0
+    ports:
+      - '127.0.0.1:${COMPOSE_MAILPIT_SMTP_PORT:-1026}:1025'
+      - '127.0.0.1:${COMPOSE_MAILPIT_UI_PORT:-8026}:8025'
+
+  migrate:
+    image: kova-migrate:local
+    build:
+      context: .
+      target: build
+    entrypoint: ['pnpm']
+    command: ['db:migrate']
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${COMPOSE_POSTGRES_USER:-kova_app}:${COMPOSE_POSTGRES_PASSWORD:?Set COMPOSE_POSTGRES_PASSWORD in .env}@postgres:5432/${COMPOSE_POSTGRES_DB:-kova_dev}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://${COMPOSE_RABBITMQ_USER:-kova_app}:${COMPOSE_RABBITMQ_PASSWORD:?Set COMPOSE_RABBITMQ_PASSWORD in .env}@rabbitmq:5672/%2F
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api: &app
+    image: kova:local
+    build:
+      context: .
+      target: runtime
+    command: ['--env-file-if-exists=.env', 'dist/src/main.api.js']
+    environment: &app_environment
+      NODE_ENV: development
+      DATABASE_URL: postgresql://${COMPOSE_POSTGRES_USER:-kova_app}:${COMPOSE_POSTGRES_PASSWORD:?Set COMPOSE_POSTGRES_PASSWORD in .env}@postgres:5432/${COMPOSE_POSTGRES_DB:-kova_dev}
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://${COMPOSE_RABBITMQ_USER:-kova_app}:${COMPOSE_RABBITMQ_PASSWORD:?Set COMPOSE_RABBITMQ_PASSWORD in .env}@rabbitmq:5672/%2F
+      PORT: 3000
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+    ports:
+      - '127.0.0.1:${PORT:-3000}:3000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - 'fetch("http://127.0.0.1:3000/health").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  worker:
+    <<: *app
+    command: ['--env-file-if-exists=.env', 'dist/src/main.worker.js']
+    ports: []
+    healthcheck:
+      disable: true
+
+  scheduler:
+    <<: *app
+    command: ['--env-file-if-exists=.env', 'dist/src/main.scheduler.js']
+    ports: []
+    healthcheck:
+      disable: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
