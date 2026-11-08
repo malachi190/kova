@@ -61,6 +61,10 @@ jobs:
 
       - name: Unit and migration tests
         run: pnpm test
+        env:
+          NODE_ENV: test
+          REDIS_URL: redis://127.0.0.1:6379
+          RABBITMQ_URL: amqp://test:test@127.0.0.1:5672/%2F
 
       - name: Integration tests
         run: pnpm test:integration
