@@ -36,9 +36,9 @@ Build Kova from first commit to deployment by following this outline **in order,
       _Done when:_ repeating a request returns the same result without running the handler twice. _Tests:_ repeat, mismatch, and concurrent-request tests.
 - [x] **0.8 Rate limiting and security basics.** Redis-backed throttling, Helmet, locked-down CORS, request size limits, DTO validation with whitelisting.
       _Done when:_ unknown fields are rejected and limits are configurable per route. _Tests:_ throttle and validation tests.
-- [ ] **0.9 Test setup and CI.** Test tooling (Jest, Supertest, Testcontainers, fast-check) and CI were explicitly authorized by the owner on 2026-11-07. GitHub Actions installs with a frozen lockfile, runs lint, typecheck, unit, migration, integration and e2e tests, audits dependencies, and builds the application image.
+- [x] **0.9 Test setup and CI.** Test tooling (Jest, Supertest, Testcontainers, fast-check) and CI were explicitly authorized by the owner on 2026-11-07. GitHub Actions installs with a frozen lockfile, runs lint, typecheck, unit, migration, integration and e2e tests, audits dependencies, and builds the application image.
   - [x] Test tooling done.
-  - [ ] CI wiring and end-to-end validation.
+  - [x] CI wiring and end-to-end validation.
         _Done when:_ CI is green on the main branch and blocks merges on failure.
 - [ ] **0.10 Audit log service.** Helper to write immutable audit records (actor, action, entity, before and after, IP).
       _Done when:_ any module can record an audit entry in the same transaction as its change. _Tests:_ unit and integration tests.

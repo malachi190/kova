@@ -1,6 +1,6 @@
 # Kova architecture
 
-Committed baseline: `34d8aba` (`2026-11-07`). The working tree was re-verified on `2026-11-08`.
+Last verified against commit `48ff96f` on `2026-11-08`.
 
 The working tree contains Phase 0.9 test-tooling changes and the owner-authorized Phase 0.2 Compose/Docker and 0.9 CI implementation. Status below reflects the inspected working tree.
 
@@ -25,7 +25,7 @@ When a feature changes a flow, diagram, event, job, table, environment variable,
 
 **Built:** Phase 0.2 Compose and Dockerfiles build successfully; the full local stack starts, and `GET /health` returns HTTP 200 with PostgreSQL, Redis, and RabbitMQ up. The migration container must receive all three service URLs because it loads the shared runtime configuration.
 
-**In progress:** Phase 0.9 test tooling, a URL-normalizing e2e helper, and GitHub Actions CI are implemented. Lint, typecheck, unit/migration, Testcontainers integration, e2e, and the image build pass locally. The local dependency audit could not reach npm's advisory endpoint (timeout), and CI still needs a green GitHub Actions run.
+**Built:** Phase 0.9 test tooling, a URL-normalizing e2e helper, and GitHub Actions CI are implemented. Lint, typecheck, unit/migration, Testcontainers integration, e2e, dependency audit, and image build all passed on GitHub Actions for commit `48ff96f`. The local dependency audit could not reach npm's advisory endpoint (timeout); GitHub's audit gate passed.
 
 ```mermaid
 flowchart LR
@@ -510,4 +510,4 @@ Every table, event, provider, and step above is specified in [AGENTS.md](../AGEN
 
 - 2026-11-07 — Initial architecture map created after inspecting the Phase 0 code, tests, migrations, environment example, and project plan. The e2e connection-string normalization fix is part of the working tree.
 - 2026-11-07 — Added owner-authorized Compose services, a non-root multi-stage application image, generated local-service credentials, CI workflow, and e2e connection-string normalization.
-- 2026-11-08 — Validated the Compose stack and HTTP 200 health response. Added Redis and RabbitMQ URLs to the migration container after its shared config validation failed. Unit/migration, integration, e2e, lint, typecheck, and image build passed locally. GitHub CI and npm audit remain pending because the local npm advisory request timed out.
+- 2026-11-08 — Validated the Compose stack and HTTP 200 health response. Added Redis and RabbitMQ URLs to the migration container after its shared config validation failed. Unit/migration, integration, e2e, lint, typecheck, and image build passed locally. GitHub Actions passed all checks, including the dependency audit, on commit `48ff96f`; the local audit request timed out.
