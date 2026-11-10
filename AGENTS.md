@@ -313,7 +313,7 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 - IDs are UUIDs. Timestamps are UTC (`timestamptz`).
 - Layers: controller, service, repository. DTOs validated with whitelisting.
 - Errors use one format: `code`, `message`, `details`, `correlationId`. Use stable error codes.
-- Pagination is cursor-based. APIs live under `/v1`.
+- Pagination is cursor-based. Business API endpoints use the `/api/v1` prefix. Keep the health endpoint unversioned at `/health` for health checks.
 - Migrations are SQL files, forward-only, and backward-compatible with the previous app version. Never edit a migration that has been applied.
 - Configuration is validated at startup; the app refuses to boot if something is missing.
 - Graceful shutdown: workers finish the current message and acknowledge only after the database commit.
