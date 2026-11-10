@@ -11,7 +11,10 @@ Read this file fully before every task. Then read `OUTLINE.md` and work from it.
 5. **Phase checkpoints.** At the end of each phase, write a short summary (what was built, tests added, anything uncertain, decisions needed) and wait for the owner's go-ahead before starting the next phase. The owner may say "continue through" to skip a checkpoint.
 6. **Keep the docs current.** When you add a command, config value, or convention, update this file. When you finish a feature, tick it in `OUTLINE.md`.
 7. **Never fake it.** Do not hard-code test values, disable tests, stub out real behaviour in production code, or mark work as done when it is not.
-8. **Infra work belongs to the owner.** Do not write Dockerfiles, Docker Compose files, Nginx configs, CI/CD pipelines, Terraform, Kubernetes manifests, or monitoring/observability/deployment plumbing unless the owner explicitly asks. When a feature needs infra work, stop and notify the owner (see "Infrastructure work is the owner's" below), then continue with everything that is not infra.
+8. **Keep Kova simple and deployable.** Do not add infrastructure components such as gateways, service meshes, Kubernetes, or extra brokers unless the owner asks.
+9. **Flag extra infrastructure.** If a task seems to need infrastructure beyond the planned stack, stop and tell the owner what is needed and what it unblocks; do not build it.
+10. Kova runs in parallel with a separate AI engineering learning plan, so Kova work should stay time-boxed to the outline.
+11. **Infra work belongs to the owner.** The owner handles Dockerfiles, Docker Compose, and CI pipelines personally. Do not write these or other infrastructure plumbing unless explicitly asked. When a feature needs infra work, stop and notify the owner (see "Infrastructure work is the owner's" below), then continue with everything that is not infra.
 
 ## Hard rules (never break these)
 
@@ -36,12 +39,11 @@ Read this file fully before every task. Then read `OUTLINE.md` and work from it.
 
 ## 0a. Infrastructure work is the owner's
 
-The owner is following a separate **infra engineering roadmap** (Linux and networking, Docker, CI/CD, Kubernetes, cloud/IaC, observability, reliability drills, and a security layer) and is using Kova as the base project to apply every part of it. All infrastructure work is therefore the owner's to do by hand. Codex builds the application, not the infrastructure.
+Kova stays simple and deployable, and runs alongside a separate AI engineering learning plan. Kova work is time-boxed to this outline. The owner handles infrastructure personally; Codex builds the application, not the infrastructure.
 
 **Codex must not do (unless the owner explicitly asks):**
 
 - Dockerfiles and Docker Compose files (including the Phase 0 local stack)
-- The Nginx gateway (added to the plan now; see `OUTLINE.md` Phase 0): a small gateway in front of the API that routes requests via Nginx, with TLS termination, request size limits, rate limiting on payment endpoints, and forwarding of real client headers
 - CI/CD pipelines, image registries, image scanning setup
 - Terraform / cloud resources / Kubernetes manifests
 - Metrics, dashboards, and alerting infrastructure
@@ -52,7 +54,7 @@ The owner is following a separate **infra engineering roadmap** (Linux and netwo
 - Build the application so it runs correctly inside the owner's infra (for example: read config from environment variables, handle SIGTERM gracefully, expose health endpoints). Treat the owner's infra choices as fixed input.
 - Future infra work that is not in the roadmap will be introduced by the owner later; when it is, integrate with it and update these docs.
 
-**Reminder triggers.** Notify the owner at minimum when reaching: `OUTLINE.md` Phase 0.1/0.2 (entry-point packaging and the local Docker Compose stack), Phase 0.11 (Nginx gateway), Phase 0.9 (CI), Phase 8.5 (observability tooling), and Phase 9 (deployment). Also flag any other point where infra work appears.
+**Reminder triggers.** Notify the owner at minimum when reaching: `OUTLINE.md` Phase 0.1/0.2 (entry-point packaging and the local Docker Compose stack), Phase 0.9 (CI), Phase 8.5 (observability tooling), and Phase 9 (deployment). Also flag any other point where infra work appears.
 
 ## 1. Project summary
 

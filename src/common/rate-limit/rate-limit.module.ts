@@ -1,10 +1,8 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import {
-  DEFAULT_THROTTLE_LIMIT,
-  DEFAULT_THROTTLE_TTL_MS,
-} from '../security/security-defaults';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { loadThrottleProfiles } from '../config/env-config';
+import { RedisThrottlerGuard } from './redis-throttler.guard';
 import { RateLimitStorageModule } from './rate-limit-storage.module';
 import { RedisThrottlerStorage } from './redis-throttler.storage';
 
@@ -15,13 +13,9 @@ import { RedisThrottlerStorage } from './redis-throttler.storage';
       inject: [RedisThrottlerStorage],
       useFactory: (storage: RedisThrottlerStorage) => ({
         storage,
-        throttlers: [
-          {
-            name: 'default',
-            limit: DEFAULT_THROTTLE_LIMIT,
-            ttl: DEFAULT_THROTTLE_TTL_MS,
-          },
-        ],
+        throttlers: Object.entries(loadThrottleProfiles()).map(
+          ([name, profile]) => ({ name, ...profile }),
+        ),
         getTracker: (request: Record<string, unknown>) => {
           const ip = request['ip'];
           return typeof ip === 'string' && ip.length > 0 ? ip : 'unknown';
@@ -29,6 +23,6 @@ import { RedisThrottlerStorage } from './redis-throttler.storage';
       }),
     }),
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [{ provide: APP_GUARD, useClass: RedisThrottlerGuard }],
 })
 export class RateLimitModule {}

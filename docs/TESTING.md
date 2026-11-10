@@ -11,7 +11,7 @@ Run tests from the repository root with Node 22 and pnpm:
 
 Copy `.env.example` to `.env`, generate distinct random hexadecimal values for `COMPOSE_POSTGRES_PASSWORD` and `COMPOSE_RABBITMQ_PASSWORD`, and use the matching values in the host `DATABASE_URL`, `RABBITMQ_URL`, and optional `TEST_DATABASE_ADMIN_URL`. Start the local stack with `docker compose up --build`. PostgreSQL, Redis, RabbitMQ (including its management UI), and Mailpit publish loopback-only ports; the API, worker, scheduler, and migration job use the private Compose network. The migration job receives all three service URLs because it loads the shared runtime configuration, then completes before app processes start. The current worker and scheduler entrypoints exit cleanly after boot until their consumers and poller are implemented; Compose does not restart them. Mailpit is at `http://localhost:8026`; RabbitMQ management is at `http://localhost:15673`.
 
-The stack keeps database and broker data in named volumes. `docker compose down` removes containers and the network while retaining those volumes. Dockerfiles exclude `.env` and run the application as the unprivileged `node` user. Nginx is not included; its gateway remains owner-managed. Local validation confirmed all services healthy and `GET http://localhost:3000/health` returning HTTP 200 with PostgreSQL, Redis, and RabbitMQ reported up.
+The stack keeps database and broker data in named volumes. `docker compose down` removes containers and the network while retaining those volumes. Dockerfiles exclude `.env` and run the application as the unprivileged `node` user. Local validation confirmed all services healthy and `GET http://localhost:3000/health` returning HTTP 200 with PostgreSQL, Redis, and RabbitMQ reported up.
 
 ## CI
 

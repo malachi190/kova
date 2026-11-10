@@ -6,6 +6,7 @@ import {
   type ExceptionFilter,
 } from '@nestjs/common';
 import { getCorrelationId } from '../correlation/correlation-context';
+import { ApiValidationException } from '../security/validation-pipe';
 
 interface ErrorResponse {
   code: string;
@@ -33,12 +34,18 @@ export class ApiExceptionFilter implements ExceptionFilter {
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
     response.status(safeStatus).json({
-      code: `HTTP_${safeStatus}`,
+      code: errorCode(exception, safeStatus),
       message: safeMessageForStatus(safeStatus),
       details: null,
       correlationId: getCorrelationId(),
     });
   }
+}
+
+function errorCode(exception: unknown, status: number): string {
+  if (exception instanceof ApiValidationException) return 'VALIDATION_ERROR';
+  if (status === HttpStatus.TOO_MANY_REQUESTS) return 'RATE_LIMITED';
+  return `HTTP_${status}`;
 }
 
 function safeMessageForStatus(status: number): string {

@@ -11,7 +11,7 @@ Build Kova from first commit to deployment by following this outline **in order,
 5. **Phase checkpoint:** at the end of each phase, post a short summary (what was built, tests added, uncertainties, decisions needed) and wait for the owner's go-ahead before starting the next phase. The owner may say "continue through" to skip a checkpoint.
 6. You may add small supporting tasks a feature obviously needs (for example a migration or a helper). Do not add new features. If you think a feature is missing, propose it to the owner.
 7. Keep `AGENTS.md` (commands, conventions) and the API documentation up to date as you go.
-8. **Infra work is the owner's, not Codex's.** The owner is following a separate infra engineering roadmap (Docker, Nginx, CI/CD, Kubernetes, cloud, observability, security) on top of Kova. Features that depend on infra are marked **Infra (owner)**. When you reach one, stop and notify the owner: say what is needed, which feature it unblocks, and its acceptance criteria. Do not write Dockerfiles, Compose files, Nginx configs, pipelines, Terraform, or deployment/monitoring plumbing unless the owner explicitly asks. The owner may add further infra work later; integrate it when it arrives. See `AGENTS.md` section 0a.
+8. **Infrastructure belongs to the owner.** The owner handles Dockerfiles, Compose, CI, and other infrastructure personally. If a feature needs infrastructure, stop and flag what is needed, what it unblocks, and its acceptance criteria. Do not add infrastructure components unless the owner asks. See `AGENTS.md` section 0a.
 9. Every feature's **Done when** also includes updating `docs/ARCHITECTURE.md`; each phase checkpoint summary must state what was added to it.
 
 ---
@@ -22,7 +22,7 @@ Build Kova from first commit to deployment by following this outline **in order,
 
 - [x] **0.1 Repository and tooling.** NestJS project with pnpm, strict TypeScript, lint, formatting, three entry points (`main.api.ts`, `main.worker.ts`, `main.scheduler.ts`), folder layout from `AGENTS.md`.
       _Done when:_ `pnpm install`, `pnpm lint`, `pnpm typecheck`, and starting each entry point all work. _Tests:_ a smoke test for each entry point. _(Packaging the entry points into Docker images is **Infra (owner)** — notify the owner when this feature is code-complete.)_
-- [x] **0.2 Local infrastructure.** The owner explicitly authorized Codex to create the local Docker Compose stack and Dockerfiles on 2026-11-07; Nginx remains owner-managed. Compose runs PostgreSQL, Redis, RabbitMQ with management UI bound to loopback, Mailpit, a migration job, and API, worker, and scheduler containers. The single application image runs as non-root; data services use named volumes and health checks.
+- [x] **0.2 Local infrastructure (owner-managed).** Compose runs PostgreSQL, Redis, RabbitMQ with management UI bound to loopback, Mailpit, a migration job, and API, worker, and scheduler containers. The single application image runs as non-root; data services use named volumes and health checks. The owner maintains the Compose and Dockerfile setup.
       _Done when:_ `docker compose up --build` starts the services and the API health endpoint reports each dependency. _Tests:_ health endpoint tests and a local Compose startup/health check.
 - [x] **0.3 Configuration.** Environment variables validated with zod at startup. App refuses to boot if something is missing. `.env.example` committed (no secrets).
       _Done when:_ missing or invalid config stops startup with a clear message. _Tests:_ config validation tests.
@@ -36,16 +36,16 @@ Build Kova from first commit to deployment by following this outline **in order,
       _Done when:_ repeating a request returns the same result without running the handler twice. _Tests:_ repeat, mismatch, and concurrent-request tests.
 - [x] **0.8 Rate limiting and security basics.** Redis-backed throttling, Helmet, locked-down CORS, request size limits, DTO validation with whitelisting.
       _Done when:_ unknown fields are rejected and limits are configurable per route. _Tests:_ throttle and validation tests.
-- [x] **0.9 Test setup and CI.** Test tooling (Jest, Supertest, Testcontainers, fast-check) and CI were explicitly authorized by the owner on 2026-11-07. GitHub Actions installs with a frozen lockfile, runs lint, typecheck, unit, migration, integration and e2e tests, audits dependencies, and builds the application image.
+- [x] **0.9 Test setup and CI (CI owner-managed).** Test tooling (Jest, Supertest, Testcontainers, fast-check) and GitHub Actions CI are in place. The workflow installs with a frozen lockfile, runs lint, typecheck, unit, migration, integration and e2e tests, audits dependencies, and builds the application image. The owner maintains the CI pipeline.
   - [x] Test tooling done.
   - [x] CI wiring and end-to-end validation.
         _Done when:_ CI is green on the main branch and blocks merges on failure.
-- [ ] **0.10 Audit log service.** Helper to write immutable audit records (actor, action, entity, before and after, IP).
+- [x] **0.10 Audit log service.** Helper to write immutable audit records (actor, action, entity, before and after, IP).
       _Done when:_ any module can record an audit entry in the same transaction as its change. _Tests:_ unit and integration tests.
-- [ ] **0.11 Nginx gateway. Infra (owner).** Added to the plan now (it was missing from the original). A small gateway in front of the API that routes requests via Nginx: TLS termination, request size limits, rate limiting on the payment endpoints, and forwarding real client headers (for example `X-Forwarded-For`) so the API can keep IP metadata for fraud checks and rate limiting. Codex's side: make the app honour forwarded headers correctly and document the headers/endpoints the gateway must pass through. Notify the owner once the API exists locally and this gateway is needed to reach it.
-      _Done when:_ the API (and later the client) is reachable only through the gateway, real client IPs are visible to the app, and the payment endpoints are rate limited at the edge. _Tests:_ owner tests the gateway; Codex tests that the app reads forwarded headers and applies per-route limits correctly.
+- [x] **0.11 Application-level guardrails.** Use Express and NestJS features only: per-IP rate limiting with `@nestjs/throttler`, with stricter limits on auth, OTP, payment, and dispute endpoints; request body size limits; Helmet security headers; strict CORS; global validation pipes with whitelist and unknown-field rejection; and a `TRUST_PROXY` environment variable for Express trust proxy configuration when running behind a platform load balancer. Buyer identity is the normalized email; IP address and user agent are metadata only for fraud checks and rate limiting.
+      _Done when:_ all listed guardrails are configured and documented in `docs/ARCHITECTURE.md`. _Tests:_ rate-limit and body-size behavior, validation and CORS configuration.
 
-**Infra:** the owner authorized Codex to build Phase 0.2 Compose/Dockerfiles and 0.9 CI. Phase 0.11 Nginx gateway remains owner-managed; Codex must notify the owner when the API is ready for it.
+**Infra:** Compose, Dockerfiles, and CI stay in the plan and are owner-managed. Flag infra needs to the owner when they arise.
 
 **Ask first:** none. **Checkpoint.**
 

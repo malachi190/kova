@@ -9,6 +9,13 @@ interface ThrottlerStorageRecord {
   timeToBlockExpire: number;
 }
 
+export class RedisThrottlerUnavailableError extends Error {
+  constructor() {
+    super('Rate-limit storage is unavailable');
+    this.name = 'RedisThrottlerUnavailableError';
+  }
+}
+
 const INCREMENT_SCRIPT = `
 local block_ttl = redis.call('PTTL', KEYS[2])
 if block_ttl > 0 then
@@ -51,13 +58,17 @@ export class RedisThrottlerStorage
     blockDuration: number,
     throttlerName: string,
   ): Promise<ThrottlerStorageRecord> {
-    if (!this.client.isOpen) await this.client.connect();
-
-    const redisKey = `kova:throttle:{${throttlerName}:${key}}`;
-    const reply: unknown = await this.client.eval(INCREMENT_SCRIPT, {
-      keys: [redisKey, `${redisKey}:blocked`],
-      arguments: [String(ttl), String(limit), String(blockDuration)],
-    });
+    let reply: unknown;
+    try {
+      if (!this.client.isOpen) await this.client.connect();
+      const redisKey = `kova:throttle:{${throttlerName}:${key}}`;
+      reply = await this.client.eval(INCREMENT_SCRIPT, {
+        keys: [redisKey, `${redisKey}:blocked`],
+        arguments: [String(ttl), String(limit), String(blockDuration)],
+      });
+    } catch {
+      throw new RedisThrottlerUnavailableError();
+    }
     const values = parseScriptReply(reply);
 
     return {
