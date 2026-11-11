@@ -21,9 +21,40 @@ test('guardrail defaults and profiles are validated and exposed', () => {
   });
 });
 
+test('auth secret must be 32 bytes in hex and Resend settings must be paired', () => {
+  const base = {
+    NODE_ENV: 'test',
+    AUTH_SECRET: '11'.repeat(32),
+    DATABASE_URL: 'postgresql://test:test@127.0.0.1:5432/kova',
+    REDIS_URL: 'redis://127.0.0.1:6379',
+    RABBITMQ_URL: 'amqp://test:test@127.0.0.1:5672/kova',
+    PORT: '3000',
+    CORS_ORIGIN: 'http://localhost:3001',
+  };
+  assert.equal(loadApiConfig(base).auth.secret.byteLength, 32);
+  assert.throws(
+    () => loadApiConfig({ ...base, AUTH_SECRET: 'not-a-secret' }),
+    /AUTH_SECRET/,
+  );
+  assert.throws(
+    () => loadApiConfig({ ...base, RESEND_API_KEY: 're_test' }),
+    /RESEND_API_KEY and RESEND_FROM_EMAIL/,
+  );
+  assert.throws(
+    () =>
+      loadApiConfig({
+        ...base,
+        RESEND_API_KEY: 're_test',
+        RESEND_FROM_EMAIL: 'not-an-email',
+      }),
+    /RESEND_FROM_EMAIL/,
+  );
+});
+
 test('CORS accepts exact origin allowlists and rejects wildcard or malformed entries', () => {
   const config = loadApiConfig({
     NODE_ENV: 'test',
+    AUTH_SECRET: '11'.repeat(32),
     DATABASE_URL: 'postgresql://test:test@127.0.0.1:5432/kova',
     REDIS_URL: 'redis://127.0.0.1:6379',
     RABBITMQ_URL: 'amqp://test:test@127.0.0.1:5672/kova',
@@ -45,6 +76,7 @@ test('CORS accepts exact origin allowlists and rejects wildcard or malformed ent
       () =>
         loadApiConfig({
           NODE_ENV: 'test',
+          AUTH_SECRET: '11'.repeat(32),
           DATABASE_URL: 'postgresql://test:test@127.0.0.1:5432/kova',
           REDIS_URL: 'redis://127.0.0.1:6379',
           RABBITMQ_URL: 'amqp://test:test@127.0.0.1:5672/kova',
@@ -70,6 +102,7 @@ test('trust proxy accepts hop counts and trusted networks, but rejects unsafe va
     () =>
       loadApiConfig({
         NODE_ENV: 'test',
+        AUTH_SECRET: '11'.repeat(32),
         DATABASE_URL: 'postgresql://test:test@127.0.0.1:5432/kova',
         REDIS_URL: 'redis://127.0.0.1:6379',
         RABBITMQ_URL: 'amqp://test:test@127.0.0.1:5672/kova',

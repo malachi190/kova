@@ -24,10 +24,10 @@ Read this file fully before every task. Then read `OUTLINE.md` and work from it.
 4. **Never trust a webhook or a browser redirect alone.** Verify the signature on the raw body, then verify with the Paystack API, then check reference, amount, and currency against the deal.
 5. **All Paystack access goes through the `PaymentProvider` interface.** No other module imports Paystack code or calls its HTTP API.
 6. **Generate and save our own unique reference before every Paystack call** (`pay_`, `po_`, `rf_` plus a UUID). A timeout never means "failed": check by reference first. Never retry a payout or refund blindly.
-7. **Every state-changing POST requires an `Idempotency-Key` header.**
+7. **Payment state-changing POSTs require an `Idempotency-Key` header.** Only payment endpoints marked with `@PaymentIdempotency()` use the interceptor and persist/replay responses through `idempotency_keys`. Other POST endpoints do not require or use this header.
 8. **Events are published only through the outbox**, written in the same transaction as the state change. Never publish to RabbitMQ directly from a request handler. Every consumer is idempotent (inbox table).
 9. **The server computes price, fee, and total.** Never accept an amount from a client. The fee is calculated when the deal is created and stored on the deal.
-10. **Never log or return** BVNs, passwords, tokens, one-time codes, secret keys, or raw webhook bodies containing personal data. Redact them. BVNs are stored with AES-256-GCM, the key lives outside the database, and decryption happens only in the verification worker.
+10. **Never log or return in JSON** BVNs, passwords, tokens, one-time codes, secret keys, or raw webhook bodies containing personal data. Redact them. The approved auth exception is access/refresh credentials set only in HttpOnly cookies; never persist credential values in idempotency responses. BVNs are stored with AES-256-GCM, the key lives outside the database, and decryption happens only in the verification worker. Every endpoint failure and handled failure added by a feature must write a structured record through the shared logger to `logs/errors.log`, including its correlation ID and safe context. Never log request/response bodies, query strings, headers, exception messages, or submitted values; validation logs may include only declared field names and validator constraint codes.
 11. **IP address and user agent are metadata only** (fraud checks and rate limiting). They are never an identity and never a pass/fail check. Buyer identity is the normalized email.
 12. **The service fee is never refunded.** A refund returns the item price only. Disputes end in a full release or a full refund, never a split.
 13. **Check authorization on every request** (a vendor sees only their own data). Deal links use long random tokens, stored hashed. Never use sequential IDs in URLs.
@@ -106,7 +106,7 @@ Kova stays simple and deployable, and runs alongside a separate AI engineering l
 | Client                 | Next.js with Typescript & Tailwind CSS (dashboard)                                |
 | Payment provider       | Paystack, behind the `PaymentProvider` interface                                  |
 
-**Entry points** (one Docker image, different start commands; building and running the image is the owner's infra work, see section 0a)
+**Entry points:** run the API, worker, and scheduler locally with the pnpm start scripts below. Docker Compose provides only their backing services during local development. Production packaging remains owner-managed Phase 9 work (see section 0a).
 
 - `main.api.ts`: HTTP API
 - `main.worker.ts`: RabbitMQ consumers (payments, payouts, refunds, notifications, receipts)
@@ -138,8 +138,8 @@ web/   (Next.js client; confirm layout at Phase 7)
 
 ### 4.1 Vendors
 
-- Register with email or phone number, password, full name, and store name. Verify email or phone with a one-time code.
-- Passwords hashed with argon2. Short-lived access tokens (JWT) plus refresh tokens with rotation. Revoke refresh tokens on password change.
+- Register with normalized email and password; phone number is optional. Full name and store name are required. Verify email with a one-time code sent through Resend. Phone is stored as contact information and is not used as identity or verified in this phase.
+- Passwords are 12–128 characters with no composition rules and are hashed with Argon2id. Access JWTs last 15 minutes; refresh sessions last 30 days and rotate on use. Both credentials are delivered only in HttpOnly, SameSite=Lax cookies (Secure outside local development), never in JSON. Reused refresh tokens revoke their session. Revoke refresh sessions on password change.
 - **Verification before the first deal:** the vendor submits a BVN. A BVN verification provider (behind the `KycVerifier` interface) returns the identity name. The vendor's bank account number is resolved through Paystack. The account name must match the BVN name. Both checks are required.
 - The BVN is kept (encrypted) after verification.
 - Vendor statuses: `PENDING_VERIFICATION`, `ACTIVE`, `FROZEN`.
@@ -299,6 +299,7 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 - Rate limit login, one-time code sending and verification, payment initialization (per IP and per email), and dispute requests. Add a CAPTCHA after repeated payment attempts.
 - API-wide rate-limit default is 60 requests per IP per 60 seconds in Redis; use `@Throttle` to set stricter route limits. Health checks skip throttling so they can report when Redis is down.
 - One-time codes expire in 5 to 10 minutes, have limited attempts, and a cooldown between sends. Store them hashed.
+- Vendor email codes use a 10-minute expiry, five attempts, and a 60-second resend cooldown. Throttle defaults are auth 5 requests per IP per minute (fail open), OTP 3 per IP per five minutes (fail closed), payment 10 per IP per minute (fail closed), and dispute 3 per IP per minute (fail closed). Login adds a 250 ms delay after invalid credentials.
 - Validate all input and reject unknown fields. Use parameterized queries. Lock down CORS. Use security headers (Helmet). JSON and URL-encoded request bodies are limited to 100 KiB.
 - Uploads: check type and size, store in object storage, never serve user files from the app origin. Build receipt PDFs from a fixed template, never from user-written HTML.
 - Admin: mandatory 2FA, role-based permissions, full audit log.
@@ -319,7 +320,7 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 - Graceful shutdown: workers finish the current message and acknowledge only after the database commit.
 - Commits are small and use clear messages (`feat:`, `fix:`, `test:`, `chore:`).
 - Comments explain _why_, not _what_.
-- Dependency build-script permissions and targeted security overrides live in `pnpm-workspace.yaml`. Only `esbuild` is allowed to run an install script because Drizzle Kit uses it to load TypeScript config; audit-driven overrides must stay scoped to the affected dependency path.
+- Dependency build-script permissions and targeted security overrides live in `pnpm-workspace.yaml`. `esbuild` may run its install script for Drizzle Kit's TypeScript config loader; `argon2` may run its install script to install the approved native password hasher. All other package build scripts remain blocked unless explicitly approved. Audit-driven overrides must stay scoped to the affected dependency path.
 
 ## 11. Testing rules
 
@@ -338,7 +339,7 @@ Deal, payment, payout, and refund each have their own state machine. Do not mix 
 
 Phase 0 creates these. Keep this section accurate.
 
-**Configuration:** copy `.env.example` to `.env` for local development, then replace its placeholders. The start, migration, and test scripts load `.env` when present; environment variables provided by the process take precedence. `NODE_ENV`, `DATABASE_URL`, `REDIS_URL`, and `RABBITMQ_URL` are required by all app processes. The API also requires `PORT` and `CORS_ORIGIN`. `.env` is ignored by Git; only `.env.example` is committed. Database integration tests use the optional `TEST_DATABASE_ADMIN_URL`, which must point to the local PostgreSQL maintenance database at `/postgres`; the helper creates and drops only a generated `kova_test_<uuid>` database.
+**Configuration:** copy `.env.example` to `.env` for local development, then replace its placeholders. The start, migration, and test scripts load `.env` when present; environment variables provided by the process take precedence. `NODE_ENV`, `DATABASE_URL`, `REDIS_URL`, and `RABBITMQ_URL` are required by all app processes. The API also requires `PORT`, `CORS_ORIGIN`, and `AUTH_SECRET` (32 random bytes in hex). Email verification delivery requires `RESEND_API_KEY` and a verified `RESEND_FROM_EMAIL`; set both together. `.env` is ignored by Git; only `.env.example` is committed. Database integration tests use the optional `TEST_DATABASE_ADMIN_URL`, which must point to the local PostgreSQL maintenance database at `/postgres`; the helper creates and drops only a generated `kova_test_<uuid>` database.
 
 ```
 pnpm install --frozen-lockfile # install pinned dependencies
@@ -357,11 +358,12 @@ pnpm audit --audit-level=moderate # fail on moderate, high, or critical advisori
 pnpm start:api                 # run the compiled API
 pnpm start:worker              # run the compiled worker
 pnpm start:scheduler           # run the compiled scheduler
-docker compose up --build      # local PostgreSQL, Redis, RabbitMQ, Mailpit, and app processes
-docker compose down            # stop local services and app processes; keep named data volumes
+docker compose up -d           # start local PostgreSQL, Redis, and RabbitMQ only
+docker compose down            # stop local services; keep named data volumes
+pnpm db:migrate                # apply pending migrations to the local PostgreSQL service
 ```
 
-For Compose, set `COMPOSE_POSTGRES_PASSWORD` and `COMPOSE_RABBITMQ_PASSWORD` in the ignored `.env` file to distinct random hexadecimal passwords (for example, use `openssl rand -hex 24`). Compose publishes service ports on loopback only. The database migration runs automatically before the API, worker, and scheduler start.
+For Compose, set `COMPOSE_POSTGRES_PASSWORD` and `COMPOSE_RABBITMQ_PASSWORD` in the ignored `.env` file to distinct random hexadecimal passwords (for example, use `openssl rand -hex 24`). Compose publishes service ports on loopback only. After the services are healthy, run `pnpm db:migrate` from the host, then run the required app process locally with its `pnpm start:*` script. Compose does not build or run the app or migrations.
 
 ## 13. Definition of done (every feature)
 
@@ -369,6 +371,7 @@ For Compose, set `COMPOSE_POSTGRES_PASSWORD` and `COMPOSE_RABBITMQ_PASSWORD` in 
 - Tests were written and pass, including failure cases for money-path code.
 - Lint, type check, and CI pass.
 - No hard rule is broken. No secrets, no sensitive data in logs.
+- Endpoint and handled failures are written to `logs/errors.log` with correlation IDs and without sensitive request data.
 - Docs updated (this file, OpenAPI, README) where relevant.
 - `docs/ARCHITECTURE.md` is updated for this feature: new or changed flows, diagrams, events, jobs, tables, config, and any new concept explained in plain language.
 - The checkbox in `OUTLINE.md` is ticked and the owner has a short summary.
@@ -382,7 +385,7 @@ For Compose, set `COMPOSE_POSTGRES_PASSWORD` and `COMPOSE_RABBITMQ_PASSWORD` in 
 | OPay: does Paystack checkout have a dedicated OPay option                                                  | Phase 3                     | OPay users pay by transfer                               |
 | VAT: does it apply on top of Paystack fees                                                                 | Phase 2 (fee reporting)     | Treat Paystack's fee as returned by the API              |
 | New-vendor deal cap amount, daily payout limits, payout hold duration, minimum and maximum delivery window | Phase 2 and 4               | Use config values with the suggested defaults            |
-| Email provider, SMS provider, object storage, CAPTCHA provider                                             | Phase 1, 5, 6               | Use interfaces with local fakes (Mailpit, local storage) |
+| SMS provider, object storage, CAPTCHA provider                                                             | Phase 5, 6                  | Use provider interfaces and test fakes                   |
 | Client repository layout (`web/` folder or separate repo)                                                  | Phase 7                     | Not started                                              |
 | Hosting target and domain                                                                                  | Phase 9                     | Not started                                              |
 | Licensing and regulatory review                                                                            | Before production           | No live keys, no production deploy                       |

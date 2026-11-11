@@ -12,6 +12,7 @@ import {
   hashIdempotentRequest,
   IdempotencyService,
 } from './idempotency.service';
+import { PAYMENT_IDEMPOTENCY_METADATA } from './payment-idempotency.decorator';
 
 interface RequestPrincipal {
   id?: unknown;
@@ -29,7 +30,12 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const request = http.getRequest<RequestWithPrincipal>();
     const response = http.getResponse<Response>();
 
-    if (request.method.toUpperCase() !== 'POST') return next.handle();
+    if (
+      request.method.toUpperCase() !== 'POST' ||
+      !isPaymentIdempotent(context)
+    ) {
+      return next.handle();
+    }
 
     const key = readIdempotencyKey(request);
     const route = readRouteTemplate(request);
@@ -64,12 +70,25 @@ export class IdempotencyInterceptor implements NestInterceptor {
   }
 }
 
+function isPaymentIdempotent(context: ExecutionContext): boolean {
+  const getHandler = context.getHandler;
+  if (typeof getHandler !== 'function') return false;
+  const handler = getHandler.call(context) as object;
+  return Reflect.getMetadata(PAYMENT_IDEMPOTENCY_METADATA, handler) === true;
+}
+
 function readIdempotencyKey(request: Request): string {
   const value = request.get('idempotency-key');
   if (!value || value.length > 255 || !/^[\x21-\x7e]+$/.test(value)) {
-    throw new BadRequestException('A valid Idempotency-Key header is required');
+    throw new IdempotencyKeyRequiredException();
   }
   return value;
+}
+
+class IdempotencyKeyRequiredException extends BadRequestException {
+  constructor() {
+    super('A valid Idempotency-Key header is required');
+  }
 }
 
 function readRouteTemplate(request: Request): string {

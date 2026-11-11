@@ -1,0 +1,1 @@
+export const AUTH_CONFIG = 'KOVA_AUTH_CONFIG';

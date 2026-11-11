@@ -9,6 +9,7 @@ overrides:
 # Drizzle Kit's TypeScript config loader requires esbuild's install script.
 allowBuilds:
   esbuild: true
+  argon2: true
   '@parcel/watcher': false
   cpu-features: false
   protobufjs: false

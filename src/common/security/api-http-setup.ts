@@ -1,4 +1,5 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { RequestMethod } from '@nestjs/common';
 import helmet from 'helmet';
 import type { ApiConfig } from '../config/env-config';
 import { ApiExceptionFilter } from '../errors/api-exception.filter';
@@ -11,6 +12,9 @@ export function configureApiHttp(
   app: NestExpressApplication,
   config: ApiConfig,
 ): void {
+  app.setGlobalPrefix('api/v1', {
+    exclude: [{ path: 'health', method: RequestMethod.ALL }],
+  });
   app.set('trust proxy', config.trustProxy);
   app.use(
     config.NODE_ENV === 'production' ? helmet() : helmet({ hsts: false }),
@@ -31,7 +35,7 @@ export function configureApiHttp(
       'X-RateLimit-Reset',
       'Retry-After',
     ],
-    credentials: false,
+    credentials: true,
   });
   app.use(correlationIdMiddleware);
   app.use(createRequestBodyParser(config));

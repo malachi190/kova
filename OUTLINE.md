@@ -20,20 +20,20 @@ Build Kova from first commit to deployment by following this outline **in order,
 
 **Goal:** a running skeleton with tooling, infrastructure, and the shared pieces every later feature needs.
 
-- [x] **0.1 Repository and tooling.** NestJS project with pnpm, strict TypeScript, lint, formatting, three entry points (`main.api.ts`, `main.worker.ts`, `main.scheduler.ts`), folder layout from `AGENTS.md`.
-      _Done when:_ `pnpm install`, `pnpm lint`, `pnpm typecheck`, and starting each entry point all work. _Tests:_ a smoke test for each entry point. _(Packaging the entry points into Docker images is **Infra (owner)** — notify the owner when this feature is code-complete.)_
-- [x] **0.2 Local infrastructure (owner-managed).** Compose runs PostgreSQL, Redis, RabbitMQ with management UI bound to loopback, Mailpit, a migration job, and API, worker, and scheduler containers. The single application image runs as non-root; data services use named volumes and health checks. The owner maintains the Compose and Dockerfile setup.
-      _Done when:_ `docker compose up --build` starts the services and the API health endpoint reports each dependency. _Tests:_ health endpoint tests and a local Compose startup/health check.
+- [x] **0.1 Repository and tooling.** NestJS project with pnpm, strict TypeScript, lint, formatting, three entry points (`main.api.ts`, `main.worker.ts`, `main.scheduler.ts`), folder layout from `AGENTS.md`. Run app processes locally during development; Compose is for backing services.
+      _Done when:_ `pnpm install`, `pnpm lint`, `pnpm typecheck`, and starting each entry point locally work. _Tests:_ a smoke test for each entry point. _(Production packaging remains owner-managed Phase 9 work.)_
+- [x] **0.2 Local infrastructure (owner-managed).** Compose runs PostgreSQL, Redis, and RabbitMQ with management UI bound to loopback, named data volumes, and health checks. The API, worker, scheduler, and migration commands run locally from the host; Compose builds and runs no application image or migration job.
+      _Done when:_ `docker compose up -d` starts the backing services, `pnpm db:migrate` applies pending migrations from the host, and locally run app processes can reach the services. _Tests:_ health endpoint tests and a local service startup check.
 - [x] **0.3 Configuration.** Environment variables validated with zod at startup. App refuses to boot if something is missing. `.env.example` committed (no secrets).
       _Done when:_ missing or invalid config stops startup with a clear message. _Tests:_ config validation tests.
 - [x] **0.4 Database setup.** Drizzle, migration tooling, `pnpm db:migrate`, test database helpers. First migrations: `idempotency_keys`, `audit_log`.
       _Done when:_ migrations apply cleanly on an empty database and are forward-only. _Tests:_ migration test on a fresh container.
-- [x] **0.5 Logging, correlation IDs, errors.** `pino` JSON logs, correlation ID middleware (read or create `x-correlation-id`), redaction of sensitive fields, global exception filter using the standard error format.
-      _Done when:_ every log line has a correlation ID and sensitive fields never appear in logs. _Tests:_ redaction test, error format test.
+- [x] **0.5 Logging, correlation IDs, errors.** `pino` JSON logs to console and `logs/errors.log` for warnings and failures, correlation ID middleware (read or create `x-correlation-id`), redaction of sensitive fields, global exception filter using the standard error format, and safe endpoint failure diagnostics.
+      _Done when:_ log lines have correlation IDs, endpoint failures are recorded to the ignored error log, and sensitive values never appear in logs. _Tests:_ file output, redaction, safe validation diagnostic, and error format tests.
 - [x] **0.6 Money utilities.** `Kobo` type and helpers (add, subtract, multiply by bps with half-up rounding), formatting helper for display.
       _Done when:_ rounding is exact and no floats are used. _Tests:_ unit tests including edge cases.
-- [x] **0.7 Idempotency support.** Interceptor for `Idempotency-Key`: stores key, request hash, and response; same key returns the stored response; same key with a different body is rejected; keys expire after 48 hours.
-      _Done when:_ repeating a request returns the same result without running the handler twice. _Tests:_ repeat, mismatch, and concurrent-request tests.
+- [x] **0.7 Idempotency support.** Payment POSTs explicitly marked with `@PaymentIdempotency()` require an `Idempotency-Key`; only those payment responses are stored and replayed from `idempotency_keys`. Other POST routes bypass the interceptor and do not require the header. Keys expire after 48 hours.
+      _Done when:_ a repeated payment request returns its stored result without running the handler twice, and non-payment POSTs do not require or store idempotency data. _Tests:_ payment repeat, mismatch, concurrency, and non-payment bypass tests.
 - [x] **0.8 Rate limiting and security basics.** Redis-backed throttling, Helmet, locked-down CORS, request size limits, DTO validation with whitelisting.
       _Done when:_ unknown fields are rejected and limits are configurable per route. _Tests:_ throttle and validation tests.
 - [x] **0.9 Test setup and CI (CI owner-managed).** Test tooling (Jest, Supertest, Testcontainers, fast-check) and GitHub Actions CI are in place. The workflow installs with a frozen lockfile, runs lint, typecheck, unit, migration, integration and e2e tests, audits dependencies, and builds the application image. The owner maintains the CI pipeline.
@@ -55,11 +55,11 @@ Build Kova from first commit to deployment by following this outline **in order,
 
 **Goal:** vendors can register, log in, get verified, and add a payout account. Admins can log in securely.
 
-- [ ] **1.1 Vendor registration.** Email or phone, password (argon2), full name, store name. Duplicate checks. Vendor starts as `PENDING_VERIFICATION`.
+- [x] **1.1 Vendor registration.** Normalized email and password, optional phone, full name, and store name. Passwords are 12–128 characters with no composition rules and are hashed with Argon2id. Duplicate email checks. Vendor starts as `PENDING_VERIFICATION`.
       _Done when:_ a vendor can register and cannot create a deal yet. _Tests:_ validation, duplicates, password hashing.
-- [ ] **1.2 One-time codes.** Code generation, hashing, expiry (5 to 10 minutes), attempt limits, send cooldown. Email through a provider interface (Mailpit locally) and SMS through a provider interface with a local fake.
-      _Done when:_ codes verify email or phone and cannot be brute-forced. _Tests:_ expiry, attempts, cooldown. **Ask first:** email and SMS providers (use fakes until confirmed).
-- [ ] **1.3 Login and sessions.** Short-lived access tokens, refresh tokens with rotation, logout, revocation on password change, login rate limiting and delays after failures.
+- [x] **1.2 One-time codes.** Six-digit email code generation, keyed hashing, 10-minute expiry, five-attempt limit, 60-second resend cooldown, and one-use verification. Email delivery uses Resend behind an email sender interface; tests use a local fake. Phone verification and SMS are not part of this phase.
+      _Done when:_ email codes verify once and cannot be brute-forced. _Tests:_ expiry, attempts, cooldown.
+- [x] **1.3 Login and sessions.** 15-minute access JWT and 30-day rotating refresh sessions. Credentials are set only in HttpOnly, SameSite=Lax cookies (Secure outside local development). Auth endpoints do not require or persist Idempotency-Key responses; refresh is strictly single-use and reuse revokes the session. Login uses the auth rate limit and adds a 250 ms delay after invalid credentials.
       _Done when:_ a stolen or reused refresh token is rejected and revoked. _Tests:_ rotation, reuse detection, revocation.
 - [ ] **1.4 `PaymentProvider` interface (first part).** Define the interface with `listBanks` and `resolveAccount`, a `FakePaymentProvider`, and a Paystack implementation for those two calls.
       _Done when:_ no other code calls Paystack directly. _Tests:_ fake provider tests, contract test against Paystack test mode.
@@ -72,7 +72,7 @@ Build Kova from first commit to deployment by following this outline **in order,
 - [ ] **1.8 Vendor profile endpoint.** View profile, verification status, and payout accounts.
       _Done when:_ a vendor sees only their own data. _Tests:_ authorization tests.
 
-**Ask first:** BVN provider, email and SMS providers, payout hold duration. **Checkpoint.**
+**Ask first:** BVN provider and payout hold duration. Email delivery uses the confirmed Resend provider. **Checkpoint.**
 
 ---
 
@@ -197,7 +197,7 @@ Build Kova from first commit to deployment by following this outline **in order,
 - [ ] **6.7 Rate-limit and security review.** Re-check limits on all public endpoints, one-time code endpoints, and uploads.
       _Done when:_ every public endpoint has an explicit limit. _Tests:_ limit tests.
 
-**Ask first:** CAPTCHA provider, SMS and email providers if not yet chosen. **Checkpoint.**
+**Ask first:** CAPTCHA and SMS providers. Resend is the selected email provider. **Checkpoint.**
 
 ---
 

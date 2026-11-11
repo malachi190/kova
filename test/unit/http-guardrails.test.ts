@@ -166,8 +166,8 @@ test('HTTP guardrails enforce profiles, retry headers, fail policy, body limits,
     const baseUrl = await listen(app);
     memoryStorage.clear();
     for (const route of ['auth', 'otp', 'payment', 'dispute']) {
-      assert.equal((await fetch(`${baseUrl}/${route}`)).status, 200);
-      const blocked = await fetch(`${baseUrl}/${route}`);
+      assert.equal((await fetch(apiUrl(baseUrl, route))).status, 200);
+      const blocked = await fetch(apiUrl(baseUrl, route));
       assert.equal(blocked.status, 429);
       assert.deepEqual(await blocked.json(), {
         code: 'RATE_LIMITED',
@@ -181,26 +181,26 @@ test('HTTP guardrails enforce profiles, retry headers, fail policy, body limits,
     memoryStorage.clear();
     const allowedIp = '198.51.100.20';
     const requestFrom = (ip: string) =>
-      fetch(`${baseUrl}/default`, { headers: { 'x-forwarded-for': ip } });
+      fetch(apiUrl(baseUrl, 'default'), { headers: { 'x-forwarded-for': ip } });
     assert.equal((await requestFrom(allowedIp)).status, 200);
     assert.equal((await requestFrom(allowedIp)).status, 200);
     assert.equal((await requestFrom(allowedIp)).status, 429);
     assert.equal((await requestFrom('198.51.100.21')).status, 200);
 
-    const metadataResponse = await fetch(`${baseUrl}/client-ip`, {
+    const metadataResponse = await fetch(apiUrl(baseUrl, 'client-ip'), {
       headers: { 'x-forwarded-for': '198.51.100.1, 198.51.100.2' },
     });
     assert.deepEqual(await metadataResponse.json(), { ip: '198.51.100.2' });
 
     memoryStorage.unavailable = true;
     assert.equal((await fetch(`${baseUrl}/health`)).status, 200);
-    assert.equal((await fetch(`${baseUrl}/auth`)).status, 200);
-    const closed = await fetch(`${baseUrl}/otp`);
+    assert.equal((await fetch(apiUrl(baseUrl, 'auth'))).status, 200);
+    const closed = await fetch(apiUrl(baseUrl, 'otp'));
     assert.equal(closed.status, 500);
     assert.equal(((await closed.json()) as { code: string }).code, 'HTTP_500');
     memoryStorage.unavailable = false;
 
-    const oversized = await fetch(`${baseUrl}/test-body/large`, {
+    const oversized = await fetch(apiUrl(baseUrl, 'test-body/large'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ data: 'x'.repeat(120 * 1024) }),
@@ -211,21 +211,24 @@ test('HTTP guardrails enforce profiles, retry headers, fail policy, body limits,
       'HTTP_413',
     );
 
-    const smallBody = await fetch(`${baseUrl}/test-body/large`, {
+    const smallBody = await fetch(apiUrl(baseUrl, 'test-body/large'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ data: 'small' }),
     });
     assert.equal(smallBody.status, 201);
 
-    const largerAllowed = await fetch(`${baseUrl}/test-body/upload/file`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ data: 'x'.repeat(120 * 1024) }),
-    });
+    const largerAllowed = await fetch(
+      apiUrl(baseUrl, 'test-body/upload/file'),
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ data: 'x'.repeat(120 * 1024) }),
+      },
+    );
     assert.equal(largerAllowed.status, 201);
 
-    const invalidDto = await fetch(`${baseUrl}/validate`, {
+    const invalidDto = await fetch(apiUrl(baseUrl, 'validate'), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ name: 42, token: 'must-not-echo' }),
@@ -236,7 +239,7 @@ test('HTTP guardrails enforce profiles, retry headers, fail policy, body limits,
       'VALIDATION_ERROR',
     );
 
-    const allowedOrigin = await fetch(`${baseUrl}/error`, {
+    const allowedOrigin = await fetch(apiUrl(baseUrl, 'error'), {
       headers: { origin: 'http://localhost:3001' },
     });
     const allowedError = (await allowedOrigin.json()) as {
@@ -286,7 +289,7 @@ test('trust proxy off ignores forwarded client IP and request metadata truncates
   const app = await createProbeApp(undefined);
   try {
     const baseUrl = await listen(app);
-    const response = await fetch(`${baseUrl}/client-ip`, {
+    const response = await fetch(apiUrl(baseUrl, 'client-ip'), {
       headers: { 'x-forwarded-for': '203.0.113.99' },
     });
     const data = (await response.json()) as { ip: string };
@@ -328,12 +331,13 @@ async function createProbeApp(
     app,
     loadApiConfig({
       NODE_ENV: nodeEnv,
+      AUTH_SECRET: '11'.repeat(32),
       DATABASE_URL: 'postgresql://test:test@127.0.0.1:5432/kova',
       REDIS_URL: 'redis://127.0.0.1:6379',
       RABBITMQ_URL: 'amqp://test:test@127.0.0.1:5672/kova',
       PORT: '3000',
       CORS_ORIGIN: 'http://localhost:3001',
-      BODY_LIMIT_OVERRIDES: '/test-body/upload=204800',
+      BODY_LIMIT_OVERRIDES: '/api/v1/test-body/upload=204800',
       ...(trustProxy === undefined ? {} : { TRUST_PROXY: trustProxy }),
     }),
   );
@@ -346,4 +350,8 @@ async function listen(app: NestExpressApplication): Promise<string> {
   const address = app.getHttpServer().address();
   assert.ok(address && typeof address !== 'string');
   return `http://127.0.0.1:${address.port}`;
+}
+
+function apiUrl(baseUrl: string, path: string): string {
+  return `${baseUrl}/api/v1/${path}`;
 }

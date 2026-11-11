@@ -8,10 +8,10 @@ The current implementation is Phase 0, the project foundation. There are no vend
 
 Kova is a TypeScript NestJS modular monolith. It has three process entry points, all using the same `AppModule`:
 
-| Process | Entry point | What it currently does |
-| --- | --- | --- |
-| API | [`src/main.api.ts`](../src/main.api.ts) | Starts the Express-backed Nest HTTP server, configures HTTP middleware and global guards, and serves `GET /health`. |
-| Worker | [`src/main.worker.ts`](../src/main.worker.ts) | Starts the shared Nest application context and handles shutdown signals. No business consumers are connected yet. |
+| Process   | Entry point                                         | What it currently does                                                                                                 |
+| --------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| API       | [`src/main.api.ts`](../src/main.api.ts)             | Starts the Express-backed Nest HTTP server, configures HTTP middleware and global guards, and serves `GET /health`.    |
+| Worker    | [`src/main.worker.ts`](../src/main.worker.ts)       | Starts the shared Nest application context and handles shutdown signals. No business consumers are connected yet.      |
 | Scheduler | [`src/main.scheduler.ts`](../src/main.scheduler.ts) | Starts the shared Nest application context and handles shutdown signals. No scheduled business jobs are connected yet. |
 
 [`src/app.module.ts`](../src/app.module.ts) imports `HealthModule`, `IdempotencyModule`, `RateLimitModule`, and `AuditModule`. Shared utilities live under `src/common`; PostgreSQL schema and migration files are under `src/db`; automated checks live under `test/`.
@@ -41,11 +41,11 @@ The project uses pnpm, TypeScript strict mode, NestJS, ESLint, and Prettier. `sr
 
 The `build`, `lint`, `format`, `format:check`, and `typecheck` scripts are defined in [`package.json`](../package.json). `pnpm-lock.yaml` pins the dependency graph.
 
-### 0.2 — Local services and application containers
+### 0.2 — Local backing services
 
-The root [`compose.yaml`](../compose.yaml) describes the local PostgreSQL, Redis, RabbitMQ, Mailpit, migration, API, worker, and scheduler services. [`Dockerfile`](../Dockerfile) builds the application image. Compose supplies service URLs and credentials through environment variables; the migration service runs before the application processes. Data services use named volumes and health checks, and published ports are loopback-bound.
+The root [`compose.yaml`](../compose.yaml) runs PostgreSQL, Redis, and RabbitMQ (with its management UI), and nothing from the application. Their data is held in named volumes, health checks report readiness, and published ports are loopback-bound. The API, worker, and scheduler run on the host through the pnpm start scripts. Run `pnpm db:migrate` from the host after PostgreSQL is healthy. The Dockerfile remains for owner-managed production packaging work; local development does not build or run the application image.
 
-This is the local development stack. The app's health endpoint probes PostgreSQL, Redis, and RabbitMQ, so a healthy HTTP response also reports whether those configured dependencies answered. The successful local Docker check returned HTTP 200 when all three were up.
+The locally run API health endpoint probes PostgreSQL, Redis, and RabbitMQ, so a healthy HTTP response reports whether those configured dependencies answered. The existing service-only Compose stack does not start the API; run it locally to check `/health`.
 
 ### 0.3 — Startup configuration
 
@@ -66,7 +66,9 @@ The matching Drizzle table definitions are in [`src/db/schema/index.ts`](../src/
 
 [`src/common/logger/logger.ts`](../src/common/logger/logger.ts) adapts Pino to Nest logging and configures redaction for sensitive values. [`correlation-id.middleware.ts`](../src/common/correlation/correlation-id.middleware.ts) accepts a valid UUID correlation ID or creates one, stores it in request context, and returns it in the `x-correlation-id` response header. The logger reads that context so related log records can be traced together.
 
-[`src/common/errors/api-exception.filter.ts`](../src/common/errors/api-exception.filter.ts) converts handled errors into the shared response shape: error code, message, details, and correlation ID. Body parser and validation failures are mapped to stable safe error codes. Tests cover logging redaction, correlation IDs, and error formatting.
+The shared application logger writes normal logs to the console and appends warnings and errors to `logs/errors.log` in the project root. The directory is created on startup, the file is ignored by Git, and the log lines are JSON. From the project root, read recent failures with `tail -f logs/errors.log`. Every API failure log includes its correlation ID, HTTP method, safe route template when Express has matched one, status, stable error code, and exception type. The API exception filter and body-parser error middleware both write failures, including generic 400 and body-size 413 responses.
+
+[`src/common/errors/api-exception.filter.ts`](../src/common/errors/api-exception.filter.ts) keeps the shared client response generic: error code, message, `details: null`, and correlation ID. For DTO failures, [`validation-pipe.ts`](../src/common/security/validation-pipe.ts) additionally sends safe field names and validator constraint codes to the server log, while omitting rejected values and not recording names of unknown request fields. Exception messages, request URLs, query strings, headers, and bodies are not logged. This lets us trace a registration validation failure without writing passwords, codes, or other submitted values to disk. Tests cover file output, redaction, correlation IDs, safe validation diagnostics, and error formatting.
 
 ### 0.6 — Integer money helpers
 
@@ -74,9 +76,9 @@ The matching Drizzle table definitions are in [`src/db/schema/index.ts`](../src/
 
 ### 0.7 — POST idempotency
 
-`IdempotencyModule` provides `IdempotencyService` and a global Nest interceptor. On a POST, [`idempotency.interceptor.ts`](../src/common/idempotency/idempotency.interceptor.ts) checks the `Idempotency-Key` header and passes method, route, query, and body information to the service. [`idempotency.service.ts`](../src/common/idempotency/idempotency.service.ts) hashes the request, uses a PostgreSQL advisory lock to serialize concurrent use of a scope/key, and stores the response in `idempotency_keys`.
+`IdempotencyModule` provides `IdempotencyService` and a global Nest interceptor that is inactive unless a handler is marked with [`@PaymentIdempotency()`](../src/common/idempotency/payment-idempotency.decorator.ts). Only marked payment POSTs require an `Idempotency-Key` and pass their method, route, query, and body through the service. [`idempotency.service.ts`](../src/common/idempotency/idempotency.service.ts) hashes the request, uses a PostgreSQL advisory lock to serialize concurrent use of a scope/key, and stores/replays only those payment responses in `idempotency_keys`. Other POSTs pass through without a key or idempotency response record. No payment endpoint exists yet, so the interceptor currently bypasses all routes.
 
-Repeating the same key and request replays the saved response. Reusing the key for a different request conflicts. Completed entries expire after 48 hours; eligible failures can be retried according to the service's rules. Non-POST requests pass through. Unit and database integration tests cover replay, mismatch, expiry, and concurrency behavior.
+Repeating the same key and request replays the saved payment response. Reusing the key for a different request conflicts. Completed entries expire after 48 hours; eligible failures can be retried according to the service's rules. Non-payment POSTs and non-POST requests pass through. Unit and database integration tests cover payment replay, mismatch, expiry, concurrency, and non-payment bypass behavior.
 
 ```mermaid
 sequenceDiagram
@@ -84,7 +86,7 @@ sequenceDiagram
   participant Interceptor as IdempotencyInterceptor
   participant Service as IdempotencyService
   participant DB as PostgreSQL
-  Client->>Interceptor: POST + Idempotency-Key
+  Client->>Interceptor: marked payment POST + Idempotency-Key
   Interceptor->>Service: request scope, hash inputs
   Service->>DB: advisory lock + lookup/insert
   alt matching completed request
@@ -129,7 +131,7 @@ The API bootstrap in [`main.api.ts`](../src/main.api.ts) disables Nest's automat
 
 1. Apply the validated Express `trust proxy` value.
 2. Install Helmet; HSTS is disabled outside production.
-3. Configure exact-origin CORS with explicit methods and headers, and credentials disabled.
+3. Configure exact-origin CORS with explicit methods and headers. Credentialed CORS is enabled for the configured exact origins because refresh credentials use cookies.
 4. Install correlation-ID middleware.
 5. Install JSON and URL-encoded parsers with route-aware limits, then parser error handling.
 6. Register the global exception filter and validation pipe.
@@ -140,13 +142,13 @@ After Express parsing, Nest handles the request. The global throttler guard runs
 
 `RateLimitModule` registers the default and named profiles with `@nestjs/throttler`. [`ThrottleProfile`](../src/common/rate-limit/throttle-profile.decorator.ts) selects a route's profile; unmarked routes use `default`. [`RedisThrottlerStorage`](../src/common/rate-limit/redis-throttler.storage.ts) stores atomic counters in Redis, and [`RedisThrottlerGuard`](../src/common/rate-limit/redis-throttler.guard.ts) applies the selected profile and outage policy.
 
-| Profile | Default limit | Default window | Redis unavailable |
-| --- | ---: | ---: | --- |
-| `default` | 60 requests | 60 seconds | Fail closed |
-| `auth` | 5 requests | 60 seconds | Fail open |
-| `otp` | 3 requests | 5 minutes | Fail closed |
-| `payment` | 10 requests | 60 seconds | Fail closed |
-| `dispute` | 3 requests | 60 seconds | Fail closed |
+| Profile   | Default limit | Default window | Redis unavailable |
+| --------- | ------------: | -------------: | ----------------- |
+| `default` |   60 requests |     60 seconds | Fail closed       |
+| `auth`    |    5 requests |     60 seconds | Fail open         |
+| `otp`     |    3 requests |      5 minutes | Fail closed       |
+| `payment` |   10 requests |     60 seconds | Fail closed       |
+| `dispute` |    3 requests |     60 seconds | Fail closed       |
 
 Each profile's limit and window can be overridden through environment configuration. A blocked request returns HTTP 429, the `RATE_LIMITED` code, and `Retry-After`. These profiles are ready to be applied to routes; there are no auth, OTP, payment, or dispute controllers yet.
 
@@ -162,7 +164,7 @@ Unit tests in [`test/unit/http-guardrails.test.ts`](../test/unit/http-guardrails
 
 ## Current HTTP request path
 
-The public API currently exposes only `GET /health`. The path below shows the shared middleware and guards that any API route encounters:
+The API exposes `GET /health` plus the implemented vendor registration and authentication routes under `/api/v1/auth`. The shared middleware and guards run before these controllers:
 
 ```mermaid
 sequenceDiagram
@@ -171,47 +173,103 @@ sequenceDiagram
   participant Guard as RedisThrottlerGuard
   participant Idem as IdempotencyInterceptor
   participant Pipe as ValidationPipe
-  participant Health as HealthController
-  participant Service as HealthService
+  participant Controller as FeatureController
   Client->>Express: HTTP request
   Express->>Express: proxy IP, Helmet, CORS, correlation ID, body parsing
   Express->>Guard: parsed request
   Guard->>Guard: selected profile + request.ip
   Guard->>Idem: allowed request
-  Idem->>Pipe: non-POST pass-through / POST idempotency
-  Pipe->>Health: GET /health
-  Health->>Service: check()
-  Service->>Service: PostgreSQL, Redis, RabbitMQ probes
-  Service-->>Health: dependency statuses
-  Health-->>Client: 200 if all up, otherwise 503; correlation header included
+  Idem->>Pipe: unmarked routes pass through / marked payment POST is idempotent
+  Pipe->>Controller: validated request
+  Controller-->>Client: feature response; correlation header included
 ```
 
 [`HealthController`](../src/modules/health/health.controller.ts) is marked `@SkipThrottle()`. [`HealthService`](../src/modules/health/health.service.ts) checks PostgreSQL, Redis, and RabbitMQ concurrently using short-lived clients and one-second timeouts. It reports each dependency as `up` or `down`; the controller returns 200 only when all are up and 503 otherwise. Errors from individual probes are converted into `down` statuses.
 
+## Phase 1 — items 1.1–1.3: vendor account and sessions
+
+The API composition is in [`api-app.module.ts`](../src/api-app.module.ts). It adds `AuthModule` to the foundation `AppModule`; the worker and scheduler continue to use `AppModule` and do not load HTTP authentication. Business routes use `/api/v1`; health remains `/health`.
+
+### Registration and email verification
+
+`POST /api/v1/auth/register` accepts a normalized email, a 12–128 character password, full name, store name, and optional phone. The global validation pipe rejects extra fields. `AuthService` hashes the password with Argon2id and passes only the hash to `VendorsService`. The `vendors` table stores the normalized email under a unique index, profile fields, `PENDING_VERIFICATION` status, and email verification timestamp. Duplicate email errors become HTTP 409. Phone is optional contact information; it is not a login identity and is not verified in this phase.
+
+After creating the vendor, `EmailVerificationCodeService` generates a cryptographically random six-digit code. It stores only a keyed HMAC hash in `email_verification_codes`, with attempts, expiry, sent time, and consumed time. The database row is protected by an advisory lock during resend. Codes expire after 10 minutes, allow five attempts, and can be resent once per 60 seconds. Verification increments failed attempts and consumes a successful code once; in the same database transaction it writes `email_verified_at` on the vendor. Email lookup and identity use the trimmed, lowercased email.
+
+`ResendEmailSender` implements the `EmailSender` interface with Resend's HTTP API and a five-second timeout. Provider errors are returned as a generic service error and are not logged with their response or secret. Tests inject [`FakeEmailSender`](../test/helpers/fake-email-sender.ts), which captures codes only in test memory. The API needs `AUTH_SECRET` (32 random bytes as hex) to derive separate HMAC keys and needs both `RESEND_API_KEY` and `RESEND_FROM_EMAIL` to send real verification email; those values are validated as a pair at startup. Resend is not required to be configured in test runs that inject the fake.
+
+The registration path does not use the payment idempotency interceptor:
+
+```mermaid
+sequenceDiagram
+  participant Client
+  participant API as AuthController / AuthService
+  participant Vendors as VendorsService
+  participant DB as PostgreSQL
+  participant Codes as EmailVerificationCodeService
+  participant Resend as EmailSender (Resend)
+  Client->>API: POST register; no Idempotency-Key required
+  API->>API: Argon2id password hash
+  API->>Vendors: create pending vendor
+  Vendors->>DB: insert vendor (unique normalized email)
+  API->>Codes: create verification code
+  Codes->>DB: store keyed code hash + expiry/attempt state
+  Codes->>Resend: send plaintext code over email
+  API-->>Client: safe vendor profile; no password or code
+```
+
+### Login, refresh, and logout
+
+`POST /api/v1/auth/login` checks the Argon2id password, requires a verified email, and rejects frozen accounts. Invalid credentials share one response and incur a 250 ms delay; the route also uses the configured `auth` per-IP rate profile (5 requests per 60 seconds by default, fail-open if Redis is unavailable). A successful login creates a fresh `auth_sessions` row and returns the profile in JSON; no idempotency key is required and no auth response is stored in `idempotency_keys`. The 15-minute access JWT and 30-day refresh credential are set only as `HttpOnly`, `SameSite=Lax` cookies. The access cookie is scoped to `/api/v1`; the refresh cookie is scoped to `/api/v1/auth`. Cookies are `Secure` outside development. The exact configured CORS origins may use credentials.
+
+Refresh credentials are never stored in plaintext. The server derives a refresh credential from a random session UUID, its rotation version, and a secret-derived HMAC key; PostgreSQL stores a keyed hash. `POST /api/v1/auth/refresh` locks the session row, accepts only the current credential, increments the token version, records the replaced credential hash in `auth_session_refresh_tokens`, extends the expiry by 30 days, and updates the current hash. Refresh is strictly single-use: reusing an old cookie revokes that session, including a network retry after a successful rotation. The client must sign in again if it cannot use the newly returned cookie. `POST /api/v1/auth/logout` revokes the session and clears both cookies. `POST /api/v1/auth/password/change` requires the current refresh cookie and current password, replaces the Argon2id password hash, revokes all the vendor's sessions in the same database transaction, and clears both cookies.
+
+Authentication POST routes do not require `Idempotency-Key` and do not write responses to `idempotency_keys`. JWT and refresh values are not returned in JSON. Only payment POST routes marked with `@PaymentIdempotency()` require the header and use response persistence. Tests verify that auth works without the header and that refresh-token reuse revokes the session.
+
+The current auth controllers are not yet protected by an access-token guard because the authenticated profile and other protected endpoints are later Phase 1 work. The current routes cover registration, email code resend/verification, login, refresh, logout, and password change.
+
+### Phase 1 tables and tests
+
+| Table                         | Writer/reader                                    | Current behavior                                                                                                           |
+| ----------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `vendors`                     | `VendorsService`; read by auth and code services | Stores normalized email, Argon2id password hash, required names, optional phone, status, and email verification timestamp. |
+| `email_verification_codes`    | `EmailVerificationCodeService`                   | Stores keyed code hashes, attempt count, expiry, cooldown timestamp, and one-use state.                                    |
+| `auth_sessions`               | `AuthSessionService`                             | Stores current refresh hash, session version, expiry, and revocation state.                                                 |
+| `auth_session_refresh_tokens` | `AuthSessionService`                             | Keeps hashes of replaced refresh credentials so reuse revokes the owning session.                                          |
+
+[`vendor-registration.spec.ts`](../test/jest/integration/vendor-registration.spec.ts) covers registration without an idempotency key, password hashing, email verification, login cookies, strict refresh rotation and reuse revocation, duplicate-email rejection, and that auth responses are not written to `idempotency_keys`. All integration tests use real PostgreSQL/Redis/RabbitMQ containers; this suite uses the fake email sender and never calls Resend.
+
 ## Foundation data and module boundaries
 
-| Table | Writer/reader | Current behavior |
-| --- | --- | --- |
-| `idempotency_keys` | `IdempotencyService` | Saves request hashes and replayable responses; supports expiry cleanup and retry behavior. |
-| `audit_log` | `AuditService` | Inserts redacted audit records and queries by entity; database trigger blocks update/delete. |
+| Table                         | Writer/reader                  | Current behavior                                                                             |
+| ----------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------- |
+| `idempotency_keys`            | `IdempotencyService`           | Saves request hashes and replayable responses; supports expiry cleanup and retry behavior.   |
+| `audit_log`                   | `AuditService`                 | Inserts redacted audit records and queries by entity; database trigger blocks update/delete. |
+| `vendors`                     | `VendorsService`               | Stores vendor registration details and email verification state.                             |
+| `email_verification_codes`    | `EmailVerificationCodeService` | Stores keyed hashes and verification attempt/expiry state.                                   |
+| `auth_sessions`               | `AuthSessionService`           | Stores refresh-session hashes, rotation version, expiry, and revocation.                     |
+| `auth_session_refresh_tokens` | `AuthSessionService`           | Stores hashes of replaced tokens for reuse detection.                                        |
 
-The application-level rule is that each feature uses its own module/service boundary. At present, `IdempotencyModule` owns idempotency operations, `AuditModule` owns audit operations, `RateLimitModule` owns the Redis throttle integration, and `HealthModule` owns dependency checks. `AppModule` composes them; it does not contain business logic.
+The application-level rule is that each feature uses its own module/service boundary. `IdempotencyModule` owns idempotency operations, `AuditModule` owns audit operations, `RateLimitModule` owns the Redis throttle integration, `HealthModule` owns dependency checks, and `AuthModule` composes `AuthService`, `AuthSessionService`, and `EmailVerificationCodeService` with `VendorsModule`. `ApiAppModule` composes HTTP authentication with the foundation `AppModule`; it does not contain business logic.
 
 ## Where the implementation is verified
 
-| Concern | Tests |
-| --- | --- |
-| Startup configuration and guardrail env parsing | `test/unit/env-config.test.ts`, `test/unit/guardrail-config.test.ts` |
-| Logging, correlation, and errors | `test/unit/logger.test.ts`, `test/unit/api-exception.filter.test.ts` |
-| Money helpers | `test/unit/kobo.test.ts`, `test/jest/unit/kobo.property.spec.ts` |
-| Idempotency and migrations | `test/unit/idempotency.test.ts`, `test/integration/idempotency.test.ts`, `test/integration/migrations.test.ts` |
-| HTTP guardrails and health | `test/unit/http-guardrails.test.ts`, `test/unit/health.test.ts`, `test/jest/e2e/health.spec.ts` |
-| Audit persistence and Redis throttling | `test/jest/integration/audit-service.spec.ts`, `test/jest/integration/redis-throttling.spec.ts` |
-| Process startup | `test/smoke/entrypoints.test.ts` |
+| Concern                                               | Tests                                                                                                          |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Startup configuration and guardrail env parsing       | `test/unit/env-config.test.ts`, `test/unit/guardrail-config.test.ts`                                           |
+| Logging, correlation, and errors                      | `test/unit/logger.test.ts`, `test/unit/api-exception.filter.test.ts`                                           |
+| Money helpers                                         | `test/unit/kobo.test.ts`, `test/jest/unit/kobo.property.spec.ts`                                               |
+| Idempotency and migrations                            | `test/unit/idempotency.test.ts`, `test/integration/idempotency.test.ts`, `test/integration/migrations.test.ts` |
+| HTTP guardrails and health                            | `test/unit/http-guardrails.test.ts`, `test/unit/health.test.ts`, `test/jest/e2e/health.spec.ts`                |
+| Audit persistence and Redis throttling                | `test/jest/integration/audit-service.spec.ts`, `test/jest/integration/redis-throttling.spec.ts`                |
+| Vendor registration, email verification, and sessions | `test/jest/integration/vendor-registration.spec.ts`                                                            |
+| Process startup                                       | `test/smoke/entrypoints.test.ts`                                                                               |
 
 Use `pnpm test`, `pnpm test:integration`, and `pnpm test:e2e` for the corresponding suites. Integration and e2e tests require Docker to be available for Testcontainers.
 
 ## Change log
 
+- 2026-11-11 — Scoped Idempotency-Key enforcement and response persistence to explicitly marked payment POSTs. Auth POSTs bypass idempotency storage; refresh tokens are strictly single-use and stale-token reuse revokes the session.
+- 2026-11-10 — Implemented Phase 1 items 1.1–1.3: vendor registration, email verification through the Resend adapter, Argon2id password storage, and cookie-only login/refresh sessions with rotation and reuse revocation.
 - 2026-11-09 — Implemented the transactional append-only audit service and application-level guardrails; verified with unit, Testcontainers integration, and e2e suites.
 - 2026-11-09 — Reworked this document to explain only implemented Phase 0 work, emphasizing item 0.10's audit-service flow and how the foundation modules communicate. Removed planned product-flow walkthroughs and future architecture descriptions.

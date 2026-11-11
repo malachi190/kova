@@ -1,9 +1,82 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { Writable } from 'node:stream';
 import test from 'node:test';
+import type { Request } from 'express';
 import { runWithCorrelationId } from '../../src/common/correlation/correlation-context';
 import { correlationIdMiddleware } from '../../src/common/correlation/correlation-id.middleware';
-import { createLogger } from '../../src/common/logger/logger';
+import { bodyParserErrorMiddleware } from '../../src/common/security/body-parser-error.middleware';
+import {
+  appLogger,
+  createLogger,
+  ERROR_LOG_FILE,
+  PinoNestLogger,
+} from '../../src/common/logger/logger';
+
+test('application warnings and errors are appended to the local error log', async () => {
+  const marker = `error-log-test-${randomUUID()}`;
+  appLogger.warn({ event: marker, status: 400 }, 'HTTP request failed');
+  await new Promise<void>((resolve, reject) => {
+    appLogger.flush((error) => (error ? reject(error) : resolve()));
+  });
+
+  const contents = await readFile(ERROR_LOG_FILE, 'utf8');
+  assert.ok(contents.includes(marker));
+});
+
+test('body parser failures write status and correlation ID to the error log', async () => {
+  const correlationId = randomUUID();
+  let statusCode = 0;
+  const response = {
+    status(code: number) {
+      statusCode = code;
+      return this;
+    },
+    json() {
+      return this;
+    },
+  };
+
+  runWithCorrelationId(correlationId, () => {
+    bodyParserErrorMiddleware(
+      { status: 413 },
+      { method: 'POST' } as Request,
+      response as never,
+      () => assert.fail('known body parser failure should be handled'),
+    );
+  });
+  assert.equal(statusCode, 413);
+  await new Promise<void>((resolve, reject) => {
+    appLogger.flush((error) => (error ? reject(error) : resolve()));
+  });
+
+  const contents = await readFile(ERROR_LOG_FILE, 'utf8');
+  const failureRecord = contents
+    .split('\n')
+    .find((line) => line.includes(correlationId));
+  assert.ok(failureRecord);
+  assert.match(failureRecord, /"code":"HTTP_413"/);
+  assert.match(failureRecord, /"exceptionType":"BodyParserError"/);
+});
+
+test('Nest error logs omit raw exception messages', async () => {
+  const correlationId = randomUUID();
+  runWithCorrelationId(correlationId, () => {
+    new PinoNestLogger().error('Error: private-error-message-sentinel');
+  });
+  await new Promise<void>((resolve, reject) => {
+    appLogger.flush((error) => (error ? reject(error) : resolve()));
+  });
+
+  const contents = await readFile(ERROR_LOG_FILE, 'utf8');
+  const failureRecord = contents
+    .split('\n')
+    .find((line) => line.includes(correlationId));
+  assert.ok(failureRecord);
+  assert.match(failureRecord, /"msg":"Error"/);
+  assert.equal(failureRecord.includes('private-error-message-sentinel'), false);
+});
 
 test('JSON logs include a correlation ID and redact sensitive fields', () => {
   let output = '';

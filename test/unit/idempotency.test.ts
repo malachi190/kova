@@ -7,6 +7,7 @@ import {
   hashIdempotentRequest,
   type ResponseToStore,
 } from '../../src/common/idempotency/idempotency.service';
+import { PAYMENT_IDEMPOTENCY_METADATA } from '../../src/common/idempotency/payment-idempotency.decorator';
 
 test('request hashing is stable across object key ordering and changes with request data', () => {
   const first = hashIdempotentRequest({
@@ -30,17 +31,40 @@ test('request hashing is stable across object key ordering and changes with requ
   assert.match(first, /^[0-9a-f]{64}$/);
 });
 
-test('POST interceptor requires an Idempotency-Key header', () => {
+test('payment POST interceptor requires an Idempotency-Key header', () => {
   const interceptor = new IdempotencyInterceptor({} as never);
   const context = createExecutionContext({
     method: 'POST',
     header: undefined,
+    paymentEndpoint: true,
   });
 
   assert.throws(
     () => interceptor.intercept(context, { handle: () => of(null) }),
-    BadRequestException,
+    (error: unknown) => {
+      assert.ok(error instanceof BadRequestException);
+      assert.equal(error.name, 'IdempotencyKeyRequiredException');
+      return true;
+    },
   );
+});
+
+test('non-payment POST passes through without idempotency persistence, with or without a key', async () => {
+  let persistenceCalled = false;
+  const interceptor = new IdempotencyInterceptor({
+    async execute() {
+      persistenceCalled = true;
+      throw new Error('Non-payment POST must bypass persistence');
+    },
+  } as never);
+  for (const header of [undefined, 'unused-non-payment-key']) {
+    const context = createExecutionContext({ method: 'POST', header });
+    const result = await firstValueFrom(
+      interceptor.intercept(context, { handle: () => of({ accepted: true }) }),
+    );
+    assert.deepEqual(result, { accepted: true });
+  }
+  assert.equal(persistenceCalled, false);
 });
 
 test('POST interceptor uses the route template and returns the stored status', async () => {
@@ -69,6 +93,7 @@ test('POST interceptor uses the route template and returns the stored status', a
       body: { amount: 2500 },
       routePath: '/deals/:token/pay',
       actualPath: '/deals/link-secret/pay',
+      paymentEndpoint: true,
     },
     (value) => {
       statusCode = value;
@@ -95,6 +120,7 @@ function createExecutionContext(
     body?: unknown;
     routePath?: string;
     actualPath?: string;
+    paymentEndpoint?: boolean;
   },
   setStatus?: (status: number) => void,
 ): ExecutionContext {
@@ -107,6 +133,10 @@ function createExecutionContext(
     path: input.actualPath ?? '/v1/test',
     route: input.routePath ? { path: input.routePath } : undefined,
   };
+  const handler = () => undefined;
+  if (input.paymentEndpoint) {
+    Reflect.defineMetadata(PAYMENT_IDEMPOTENCY_METADATA, true, handler);
+  }
   const response = {
     statusCode: 201,
     status(code: number) {
@@ -120,5 +150,6 @@ function createExecutionContext(
       getRequest: () => request,
       getResponse: () => response,
     }),
+    getHandler: () => handler,
   } as unknown as ExecutionContext;
 }

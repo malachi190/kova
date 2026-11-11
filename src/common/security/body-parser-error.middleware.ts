@@ -1,9 +1,10 @@
 import type { ErrorRequestHandler } from 'express';
 import { getCorrelationId } from '../correlation/correlation-context';
+import { appLogger } from '../logger/logger';
 
 export const bodyParserErrorMiddleware: ErrorRequestHandler = (
   error: unknown,
-  _request,
+  request,
   response,
   next,
 ) => {
@@ -12,6 +13,21 @@ export const bodyParserErrorMiddleware: ErrorRequestHandler = (
     next(error);
     return;
   }
+
+  appLogger.warn(
+    {
+      event: 'http_request_failed',
+      status,
+      code: status === 413 ? 'HTTP_413' : 'HTTP_400',
+      method: request.method,
+      route:
+        typeof request.route?.path === 'string'
+          ? request.route.path
+          : '<unmatched>',
+      exceptionType: 'BodyParserError',
+    },
+    'HTTP request failed',
+  );
 
   response.status(status).json({
     code: status === 413 ? 'HTTP_413' : 'HTTP_400',

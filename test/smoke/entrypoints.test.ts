@@ -32,6 +32,7 @@ test('API entry point terminates after SIGTERM', async () => {
     env: {
       ...process.env,
       NODE_ENV: 'test',
+      AUTH_SECRET: '11'.repeat(32),
       DATABASE_URL: 'postgresql://test:test@127.0.0.1:5432/kova_test',
       REDIS_URL: 'redis://127.0.0.1:6379',
       RABBITMQ_URL: 'amqp://test:test@127.0.0.1:5672/kova_test',

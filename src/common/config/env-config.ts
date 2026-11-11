@@ -63,6 +63,11 @@ const apiSchema = runtimeSchema.extend({
     100 * 1024 * 1024,
   ),
   BODY_LIMIT_OVERRIDES: z.string().default(''),
+  AUTH_SECRET: z.string().regex(/^[0-9a-fA-F]{64}$/, {
+    message: 'must be 32 bytes encoded as 64 hexadecimal characters',
+  }),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM_EMAIL: z.string().optional(),
   ...throttleEnvironmentSchema.shape,
 });
 
@@ -78,11 +83,18 @@ export type ThrottleProfiles = Record<
   ThrottleProfileName,
   { limit: number; ttl: number }
 >;
+export interface AuthConfig {
+  secret: Buffer;
+  secureCookies: boolean;
+  resendApiKey?: string;
+  resendFromEmail?: string;
+}
 export type ApiConfig = z.infer<typeof apiSchema> & {
   corsOrigins: string[];
   trustProxy: TrustProxySetting;
   bodyLimitOverrides: BodyLimitOverride[];
   throttleProfiles: ThrottleProfiles;
+  auth: AuthConfig;
 };
 
 export function loadRuntimeConfig(
@@ -130,6 +142,32 @@ export function loadApiConfig(
     trustProxy,
     bodyLimitOverrides,
     throttleProfiles: toThrottleProfiles(config),
+    auth: parseAuthConfig(config),
+  };
+}
+
+function parseAuthConfig(config: z.infer<typeof apiSchema>): AuthConfig {
+  if (Boolean(config.RESEND_API_KEY) !== Boolean(config.RESEND_FROM_EMAIL)) {
+    throw new Error(
+      'Invalid environment configuration: RESEND_API_KEY and RESEND_FROM_EMAIL must be set together',
+    );
+  }
+  if (
+    config.RESEND_FROM_EMAIL &&
+    !z.string().email().safeParse(config.RESEND_FROM_EMAIL).success
+  ) {
+    throw new Error(
+      'Invalid environment configuration: RESEND_FROM_EMAIL: must be an email address',
+    );
+  }
+
+  return {
+    secret: Buffer.from(config.AUTH_SECRET, 'hex'),
+    secureCookies: config.NODE_ENV === 'production',
+    ...(config.RESEND_API_KEY ? { resendApiKey: config.RESEND_API_KEY } : {}),
+    ...(config.RESEND_FROM_EMAIL
+      ? { resendFromEmail: config.RESEND_FROM_EMAIL }
+      : {}),
   };
 }
 

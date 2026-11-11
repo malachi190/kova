@@ -8,6 +8,48 @@
       "when": 1793901132071,
       "tag": "0000_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1794318271064,
+      "tag": "0001_even_nick_fury",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794318611613,
+      "tag": "0002_furry_tiger_shark",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794319163634,
+      "tag": "0003_modern_molecule_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794319658438,
+      "tag": "0004_fast_dagger",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794319811637,
+      "tag": "0005_little_whiplash",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794411959739,
+      "tag": "0006_acoustic_firebrand",
+      "breakpoints": true
     }
   ]
 }

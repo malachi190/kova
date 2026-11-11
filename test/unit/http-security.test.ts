@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { BadRequestException } from '@nestjs/common';
 import { IsString } from 'class-validator';
 import test from 'node:test';
-import { createApiValidationPipe } from '../../src/common/security/validation-pipe';
+import {
+  ApiValidationException,
+  createApiValidationPipe,
+} from '../../src/common/security/validation-pipe';
 import { createApiApplication } from '../../src/main.api';
 import { createTestApiConfig } from '../helpers/api-config';
 
@@ -27,6 +30,10 @@ test('API applies Helmet headers and allows only the configured CORS origin', as
     assert.equal(
       allowed.headers.get('access-control-allow-origin'),
       'http://localhost:3001',
+    );
+    assert.equal(
+      allowed.headers.get('access-control-allow-credentials'),
+      'true',
     );
     assert.match(
       allowed.headers.get('access-control-allow-headers') ?? '',
@@ -91,10 +98,22 @@ test('global validation rejects unknown DTO fields', async () => {
   const pipe = createApiValidationPipe();
   await assert.rejects(
     pipe.transform(
-      { name: 'Kova', unexpected: 'value' },
+      { name: 42, unexpected: 'must not be logged' },
       { type: 'body', metatype: ExampleDto, data: undefined },
     ),
-    BadRequestException,
+    (error: unknown) => {
+      assert.ok(error instanceof BadRequestException);
+      assert.ok(error instanceof ApiValidationException);
+      assert.deepEqual(error.issues, [
+        { field: '<unknown>', constraints: ['whitelistValidation'] },
+        { field: 'name', constraints: ['isString'] },
+      ]);
+      assert.equal(
+        JSON.stringify(error.issues).includes('must not be logged'),
+        false,
+      );
+      return true;
+    },
   );
   const transformed = await pipe.transform(
     { name: 'Kova' },
